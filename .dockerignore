@@ -1,0 +1,17 @@
+# Keep the build context small and avoid leaking secrets/venvs.
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.env
+.env.*
+data
+tests
+resource
+DESIGN.md
+Dockerfile
+docker-compose.yml
+.dockerignore

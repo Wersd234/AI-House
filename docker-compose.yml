@@ -1,11 +1,70 @@
+# ─── 显卡单间（VRAM Suite）— docker compose ───────────────────────────
+# Designed for Portainer: deploy directly from the GitHub repo
+# (https://github.com/Wersd234/AI-House.git, branch main).
+#
+# `.env` is NOT committed (gitignored), so this file uses `${VAR}`
+# substitution instead. When deploying via Portainer, fill these in the
+# stack's "Environment variables" panel; otherwise they fall back to the
+# defaults below (or to the placeholders from config.py).
+#
+#   required:  DISCORD_BOT_TOKEN
+#   optional:  LLM_BASE_URL  (defaults to the host's local LLM)
+
 services:
   vrsuite:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vrsuite:latest
     container_name: vrsuite-bot
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      # ── Discord (REQUIRED) ───────────────────────────────────
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
+
+      # ── LLM backend on the HOST (host.docker.internal) ───────
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-123}
+      LLM_CTX_SIZE: ${LLM_CTX_SIZE:-32768}
+
+      # ── Model sniffer ────────────────────────────────────────
+      SNIFFER_INTERVAL_SEC: ${SNIFFER_INTERVAL_SEC:-10}
+      SNIFFER_TIMEOUT_SEC: ${SNIFFER_TIMEOUT_SEC:-3}
+      SNIFFER_FAILURES_TO_SLEEP: ${SNIFFER_FAILURES_TO_SLEEP:-3}
+
+      # ── LLM-generated presence ──────────────────────────────
+      LLM_PRESENCE_ENABLED: ${LLM_PRESENCE_ENABLED:-true}
+      PRESENCE_MAX_TOKENS: ${PRESENCE_MAX_TOKENS:-64}
+      PRESENCE_REFRESH_SEC: ${PRESENCE_REFRESH_SEC:-7200}
+
+      # ── Webhook identity (placeholders — override in Portainer) ──
+      WEBHOOK_NAME_QWEN: ${WEBHOOK_NAME_QWEN:-}
+      WEBHOOK_AVATAR_QWEN: ${WEBHOOK_AVATAR_QWEN:-}
+      WEBHOOK_NAME_DEEPSEEK: ${WEBHOOK_NAME_DEEPSEEK:-}
+      WEBHOOK_AVATAR_DEEPSEEK: ${WEBHOOK_AVATAR_DEEPSEEK:-}
+
+      # ── Static presence fallback (placeholders) ─────────────
+      PRESENCE_QWEN: ${PRESENCE_QWEN:-}
+      PRESENCE_DEEPSEEK: ${PRESENCE_DEEPSEEK:-}
+      PRESENCE_SLEEP: ${PRESENCE_SLEEP:-}
+
+      # ── Immersive fallback copy ─────────────────────────────
+      SLEEP_REPLY: ${SLEEP_REPLY:-}
+      LOADING_REPLY: ${LOADING_REPLY:-}
+
+    # Persist runtime state (state.json / webhooks.json / settings).
     volumes:
-      - ./data:/app/data
+      - vrsuite_data:/app/data
+
+    # Let the container reach the host's LLM (vLLM/Ollama on :8000).
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  vrsuite_data:
