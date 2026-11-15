@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Environment
+.env
+
+# Runtime data (persisted state, webhook cache, settings)
+data/*.json
+data/*.tmp
+
+# Image / resource placeholders
+resource/*.png
+resource/*.jpg
+resource/*.jpeg
+resource/*.webp

@@ -1,0 +1,11 @@
+services:
+  vrsuite:
+    build: .
+    container_name: vrsuite-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

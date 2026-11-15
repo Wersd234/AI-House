@@ -1,0 +1,154 @@
+"""
+Central configuration for the VRAM Suite (显卡单间) Discord Bot.
+
+All tunable parameters live here so they can be adjusted without
+touching business logic. Environment variables are loaded once at
+import time via python-dotenv.
+
+This module mirrors Project Amadeus' config layout, but replaces the
+worldline state machine with an active-character state machine driven
+by a fast model sniffer (see sniffer.py / state.py).
+"""
+
+import os
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Structured logging with timestamps for Docker log aggregation
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("vrsuite")
+
+# ── Paths ──────────────────────────────────────────────────────────
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+PROMPTS_DIR = os.path.join(PROJECT_ROOT, "properties", "system_prompts")
+
+# Runtime JSON files (stored in data/ for Docker volume mount safety)
+STATE_FILE = os.path.join(DATA_DIR, "state.json")                 # active character state
+WEBHOOKS_FILE = os.path.join(DATA_DIR, "webhooks.json")           # per-guild webhook cache
+SETTINGS_FILE = os.path.join(DATA_DIR, "server_settings.json")    # per-guild settings
+
+# ── Discord ────────────────────────────────────────────────────────
+DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+
+# ── LLM Backend ────────────────────────────────────────────────────
+# OpenAI-compatible API. The model field is NOT sent to the server —
+# the backend (vLLM / Ollama / SGLang / LMDeploy) uses whatever is loaded.
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8000/v1")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "123")
+CTX_SIZE = int(os.getenv("LLM_CTX_SIZE", "32768"))
+
+# ── Model Sniffer (心跳嗅探器) ─────────────────────────────────────
+# How often the poller probes the inference endpoint (seconds).
+SNIFFER_INTERVAL_SEC = int(os.getenv("SNIFFER_INTERVAL_SEC", "10"))
+# Probe timeout (seconds) — a timeout or connection-refused counts as
+# "all asleep" (全员断电休眠).
+SNIFFER_TIMEOUT_SEC = float(os.getenv("SNIFFER_TIMEOUT_SEC", "3"))
+# Which probe paths to try, in order (OpenAI-compatible endpoints vary).
+SNIFFER_PROBE_PATHS = ["/v1/models", "/models"]
+
+# ── Character Detection (角色判定) ─────────────────────────────────
+# Model ID keyword → active character key. First match wins.
+# "qwen"     → 千问大小姐 (QWEN)
+# "deepseek" → 大肥鱼 (DEEPSEEK)
+# anything else / unreachable → ALL_SLEEP (全员休眠)
+CHARACTER_KEYWORDS = [
+    # (keyword, character_key)
+    ("deepseek", "DEEPSEEK"),
+    ("qwen", "QWEN"),
+]
+
+# Canonical character keys
+CHARACTER_KEYS = ("QWEN", "DEEPSEEK", "ALL_SLEEP")
+
+# ── Presence / Signature (Discord Presence) ────────────────────────
+# Updated by the state machine whenever the active character changes.
+# Each entry: {activity, status} — placeholder, fill later.
+PRESENCE_BY_CHARACTER = {
+    "QWEN": os.getenv("PRESENCE_QWEN", "<占位：如「正在嫌弃机箱进灰」>"),
+    "DEEPSEEK": os.getenv("PRESENCE_DEEPSEEK", "<占位：如「正在水冷水池里吐泡泡」>"),
+    "ALL_SLEEP": os.getenv("PRESENCE_SLEEP", "<占位：如「机箱断电中，少女们都睡着了」>"),
+}
+
+# ── Webhook Identity (Webhook 身份拟态) ────────────────────────────
+# Per-character webhook identity. Name + avatar URL are placeholders.
+WEBHOOK_IDENTITY = {
+    "QWEN": {
+        "name": os.getenv("WEBHOOK_NAME_QWEN", "<占位：如「千问大小姐」>"),
+        "avatar_url": os.getenv("WEBHOOK_AVATAR_QWEN", "<占位：持扇少女立绘 URL>"),
+    },
+    "DEEPSEEK": {
+        "name": os.getenv("WEBHOOK_NAME_DEEPSEEK", "<占位：如「大肥鱼」>"),
+        "avatar_url": os.getenv("WEBHOOK_AVATAR_DEEPSEEK", "<占位：鲸鱼娘立绘 URL>"),
+    },
+}
+
+# ── Immersive Fallback Copy (异常与边界文案) ───────────────────────
+# These are the "沉浸式提示文案" used when the suite is asleep or
+# loading. All placeholder strings — fill in final copy later.
+SLEEP_REPLY = os.getenv(
+    "SLEEP_REPLY",
+    "机箱电源已切断，合租屋门反锁了。千问大小姐和大肥鱼都在沉睡中，请等待房东（宿主）开机。",
+)
+LOADING_REPLY = os.getenv(
+    "LOADING_REPLY",
+    "少女正在艰难地挤进显存里……显卡风扇呼呼转，请稍等 10 秒。",
+)
+
+# ── Conversation (聊天) ────────────────────────────────────────────
+HISTORY_MAXLEN = 20
+MAX_REPLY_TOKENS = 1024
+MAX_MEMORY_TOKENS = 512
+
+CHAT_SAMPLING = {
+    "temperature": 0.85,
+    "top_p": 0.95,
+    "presence_penalty": 0.15,
+    "frequency_penalty": 0.0,
+}
+CHAT_SAMPLING_EXTRA = {
+    "top_k": 64,
+    "min_p": 0.05,
+    "repeat_penalty": 1.05,
+    "cache_prompt": True,
+}
+MEMORY_SAMPLING = {
+    "temperature": 0.3,
+    "top_p": 0.9,
+}
+
+# ── Name-call trigger (呼名必回) ───────────────────────────────────
+# Any mention of these names summons whoever is on duty.
+NAME_TRIGGER_KEYWORDS = [
+    "千问", "大小姐", "qwen",
+    "肥鱼", "大鱼", "deepseek", "鲸鱼",
+]
+
+# ── System Prompt Loading ──────────────────────────────────────────
+def _load_prompt(filename: str) -> str:
+    path = os.path.join(PROMPTS_DIR, filename)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.warning("Prompt file not found: %s", path)
+        return ""
+
+# Role cards are loaded per character key. 千问 / 大肥鱼 placeholders
+# live in properties/system_prompts/qwen_zh.txt & deepseek_zh.txt.
+SYSTEM_PROMPTS = {
+    "QWEN": {
+        "zh": _load_prompt("qwen_zh.txt"),
+        "en": _load_prompt("qwen_en.txt"),
+    },
+    "DEEPSEEK": {
+        "zh": _load_prompt("deepseek_zh.txt"),
+        "en": _load_prompt("deepseek_en.txt"),
+    },
+}
