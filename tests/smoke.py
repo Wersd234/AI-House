@@ -139,6 +139,32 @@ class PresenceGenerationTest(unittest.TestCase):
         self.assertIn("DEEPSEEK", config.PRESENCE_BY_CHARACTER)
         self.assertIn("ALL_SLEEP", config.PRESENCE_BY_CHARACTER)
 
+    def test_presence_refresh_config(self):
+        import config
+        # Default refresh interval is 2h = 7200s
+        self.assertEqual(config.PRESENCE_REFRESH_SEC, 7200)
+        self.assertGreater(config.PRESENCE_REFRESH_SEC, 0)
+
+    def test_generate_presence_time_injected(self):
+        import asyncio
+        import datetime
+        from unittest import mock
+        from llm_api import _chat_once, generate_presence
+
+        captured = {}
+
+        async def fake_chat_once(messages, max_tokens, sampling, extra, model):
+            # The time must appear in the user instruction
+            user_content = next(m["content"] for m in messages if m["role"] == "user")
+            captured["has_time"] = "14:30" in user_content
+            return "正在花园喝下午茶"
+
+        with mock.patch.object(__import__("llm_api"), "_chat_once", fake_chat_once):
+            fixed = datetime.datetime(2026, 11, 15, 14, 30)
+            result = asyncio.run(generate_presence("QWEN", now=fixed))
+        self.assertEqual(result, "正在花园喝下午茶")
+        self.assertTrue(captured.get("has_time"), "time was not injected into the prompt")
+
     def test_generate_presence_no_role_card(self):
         import asyncio
         from llm_api import generate_presence

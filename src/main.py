@@ -32,7 +32,7 @@ from config import (
     logger, DISCORD_TOKEN, HISTORY_MAXLEN,
     NAME_TRIGGER_KEYWORDS,
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
-    PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED,
+    PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
     SLEEP_REPLY, LOADING_REPLY,
 )
 from utils import (
@@ -69,6 +69,7 @@ class VrSuiteBot(discord.Client):
     async def setup_hook(self):
         setup_commands(self)
         self.model_sniffer_loop.start()
+        self.presence_refresh_loop.start()
         await self.tree.sync()
         logger.info("Command tree synced.")
 
@@ -146,12 +147,31 @@ class VrSuiteBot(discord.Client):
     async def _before_sniffer(self):
         await self.wait_until_ready()
 
+    # ── Presence Auto-Refresh (签名定时刷新) ──────────────────────
+    # Keeps the on-duty girl's signature time-aware: every
+    # PRESENCE_REFRESH_SEC (default 2h) it regenerates a fresh status
+    # line based on the current system time.
+
+    @tasks.loop(seconds=PRESENCE_REFRESH_SEC)
+    async def presence_refresh_loop(self):
+        await self.wait_until_ready()
+        char = get_character()
+        if char == "ALL_SLEEP":
+            # Nobody awake — the static sleep copy is already correct.
+            return
+        logger.info("⏰ Refreshing time-aware presence for %s", char)
+        await self._apply_presence(char)
+
+    @presence_refresh_loop.before_loop
+    async def _before_presence_refresh(self):
+        await self.wait_until_ready()
+
     # ── Handover Announcement (交接班公告) ───────────────────────
 
     async def _announce_handover(self, old_char: str, new_char: str):
         """Post an in-character handover line, sent AS the newly-awake girl."""
         if new_char == "ALL_SLEEP":
-            # Everyone left — post a generic "机箱断电" note instead.
+            # Everyone left — post a generic "别墅打烊" note instead.
             await self._announce_power_off()
             return
         if self._handover_announced == (old_char, new_char):

@@ -10,6 +10,7 @@ Supports:
 This module is largely inherited from Project Amadeus' llm_api.py.
 """
 
+import datetime
 import json
 import re
 from openai import AsyncOpenAI
@@ -181,6 +182,7 @@ async def generate_presence(
     character: str,
     lang: str = "zh",
     model: str | None = None,
+    now: datetime.datetime | None = None,
 ) -> str | None:
     """
     Ask the on-duty girl to invent her own Discord signature status.
@@ -196,6 +198,10 @@ async def generate_presence(
         'zh' or 'en'.
     model : str | None
         Optional explicit model id; None = whatever is loaded.
+    now : datetime.datetime | None
+        The current system time to make the status time-aware. Defaults
+        to the current local time. Pass it in so callers can test with a
+        fixed clock.
     """
     role_card = SYSTEM_PROMPTS.get(character, {}).get(lang) \
         or SYSTEM_PROMPTS.get(character, {}).get("zh", "")
@@ -203,22 +209,28 @@ async def generate_presence(
         logger.warning("No role card for %s — skipping LLM presence", character)
         return None
 
+    now = now or datetime.datetime.now()
+    time_str = now.strftime("%H:%M")
+    weekday = now.strftime("%A")
+
     if lang == "zh":
         instruction = (
+            f"现在是{weekday}的 {time_str}。"
             "你现在是 Discord 上的一名在线少女。请基于你自己的角色卡，"
-            "用一句话、以你自己此刻的语气和性格，写下你的『签名状态』"
-            "（就是 Discord 昵称下面那行小字，格式类似“正在花园喝下午茶”、"
-            "“在泳池里吐泡泡”）。要求：只输出那一句签名本身，不要任何解释、"
-            "引号、标点结尾或前后缀，不超过 12 个字。"
+            "结合当前的具体时间与时段，用一句话、以你自己此刻的语气和性格，"
+            "写下你的『签名状态』（就是 Discord 昵称下面那行小字，"
+            "格式类似“傍晚在花园喝下午茶”、“深夜在书房读书”、“午后在泳池里吐泡泡”）。"
+            "要求：只输出那一句签名本身，不要任何解释、引号、标点结尾或前后缀，不超过 12 个字。"
         )
     else:
         instruction = (
-            "You are an online girl on Discord. Based on your role card, "
-            "write your status line in one short sentence, in your own "
-            "voice and personality (e.g. \"sipping tea in the garden\", "
-            "\"blowing bubbles in the pool\"). Requirements: output ONLY "
-            "that status line — no explanation, quotes, trailing "
-            "punctuation, or prefixes. Keep it under 12 words."
+            f"It is {weekday}, {time_str}. "
+            "You are an online girl on Discord. Based on your role card and "
+            "the current time of day, write your status line in one short "
+            "sentence, in your own voice and personality (e.g. \"sipping "
+            "evening tea in the garden\", \"reading late in the study\"). "
+            "Requirements: output ONLY that status line — no explanation, "
+            "quotes, trailing punctuation, or prefixes. Keep it under 12 words."
         )
 
     messages = [

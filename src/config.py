@@ -93,6 +93,9 @@ PRESENCE_SAMPLING = {
     "temperature": 0.9,
     "top_p": 0.95,
 }
+# Auto-refresh the on-duty girl's signature every N seconds so it stays
+# fresh and time-aware (e.g. afternoon tea, evening reading). 7200s = 2h.
+PRESENCE_REFRESH_SEC = int(os.getenv("PRESENCE_REFRESH_SEC", "7200"))
 
 # ── Webhook Identity (Webhook 身份拟态) ────────────────────────────
 # Per-character webhook identity. Name + avatar URL are placeholders.
