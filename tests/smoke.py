@@ -100,6 +100,47 @@ class PromptAssemblyTest(unittest.TestCase):
         self.assertIn("大肥鱼", p)
         self.assertIn("System Status", p)
 
+    def test_handover_note(self):
+        from prompts import build_handover_note
+        # DEEPSEEK left, QWEN is on duty → the note names the leaving girl
+        p = build_handover_note("zh", "DEEPSEEK", "QWEN")
+        self.assertIn("大肥鱼", p)
+        self.assertIn("值班", p)
+
+    def test_loading_note(self):
+        from prompts import build_loading_note
+        p = build_loading_note("zh")
+        self.assertIn("显存", p)
+
+
+class LoadingVsSleepTest(unittest.TestCase):
+    """config + main sniffer: consecutive failures before declaring sleep."""
+
+    def test_failure_threshold_config(self):
+        import config
+        # Default: a single failure must NOT immediately count as sleep
+        self.assertGreaterEqual(config.SNIFFER_FAILURES_TO_SLEEP, 2)
+
+    def test_sniffer_config_present(self):
+        import config
+        self.assertGreater(config.SNIFFER_INTERVAL_SEC, 0)
+        self.assertGreater(config.SNIFFER_TIMEOUT_SEC, 0)
+
+
+class WebhookModuleTest(unittest.TestCase):
+    """webhook: module imports and cache helpers."""
+
+    def test_webhook_cache_helpers(self):
+        import webhook
+        # load should never raise, even with no cache file
+        data = webhook._load_webhooks()
+        self.assertIsInstance(data, dict)
+
+    def test_webhook_identity_config(self):
+        import config
+        self.assertIn("QWEN", config.WEBHOOK_IDENTITY)
+        self.assertIn("DEEPSEEK", config.WEBHOOK_IDENTITY)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -76,9 +76,10 @@ async def _get_or_create_webhook(
     identity = WEBHOOK_IDENTITY.get(character, {})
     name = identity.get("name", "少女")[:80]
     avatar_url = identity.get("avatar_url") or None
+    avatar_bytes = await _fetch_avatar_bytes(avatar_url) if avatar_url else None
 
     try:
-        wh = await channel.create_webhook(name=name, avatar=avatar_url)
+        wh = await channel.create_webhook(name=name, avatar=avatar_bytes)
     except (discord.Forbidden, discord.HTTPException) as exc:
         logger.warning("Webhook create failed in #%s (%s): %s", channel.name, guild_id, exc)
         return None
@@ -87,6 +88,28 @@ async def _get_or_create_webhook(
     _save_webhooks(cache)
     logger.info("🪄 Created webhook '%s' in guild %s", name, guild_id)
     return wh
+
+
+async def _fetch_avatar_bytes(url: str) -> Optional[bytes]:
+    """
+    Download a remote image into bytes for use as a webhook avatar.
+
+    discord.py's create_webhook accepts a bytes payload for the avatar,
+    not a URL — so we fetch it ourselves. Returns None on any failure
+    (the webhook then uses Discord's default avatar).
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200 and resp.content:
+                # Sanity cap: avatars are tiny; guard against huge payloads
+                if len(resp.content) <= 1024 * 1024:  # 1 MB
+                    return resp.content
+                logger.warning("Avatar too large (%d bytes) — skipped", len(resp.content))
+    except Exception as exc:
+        logger.warning("Avatar download failed (%s): %s", url, exc)
+    return None
 
 
 async def send_as(

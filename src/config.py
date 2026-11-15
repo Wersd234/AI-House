@@ -52,6 +52,11 @@ SNIFFER_INTERVAL_SEC = int(os.getenv("SNIFFER_INTERVAL_SEC", "10"))
 SNIFFER_TIMEOUT_SEC = float(os.getenv("SNIFFER_TIMEOUT_SEC", "3"))
 # Which probe paths to try, in order (OpenAI-compatible endpoints vary).
 SNIFFER_PROBE_PATHS = ["/v1/models", "/models"]
+# How many CONSECUTIVE failed probes before we declare "全员断电休眠".
+# A single failure is treated as "model loading" (加载中) and keeps the
+# current character — the host may be mid-switch. Only sustained
+# unreachability means the box is off.
+SNIFFER_FAILURES_TO_SLEEP = int(os.getenv("SNIFFER_FAILURES_TO_SLEEP", "3"))
 
 # ── Character Detection (角色判定) ─────────────────────────────────
 # Model ID keyword → active character key. First match wins.
