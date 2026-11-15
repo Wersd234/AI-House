@@ -110,7 +110,7 @@ class PromptAssemblyTest(unittest.TestCase):
     def test_loading_note(self):
         from prompts import build_loading_note
         p = build_loading_note("zh")
-        self.assertIn("显存", p)
+        self.assertIn("别墅", p)
 
 
 class LoadingVsSleepTest(unittest.TestCase):
@@ -125,6 +125,31 @@ class LoadingVsSleepTest(unittest.TestCase):
         import config
         self.assertGreater(config.SNIFFER_INTERVAL_SEC, 0)
         self.assertGreater(config.SNIFFER_TIMEOUT_SEC, 0)
+
+
+class PresenceGenerationTest(unittest.TestCase):
+    """config + llm_api: LLM-generated Discord signature status."""
+
+    def test_presence_config_present(self):
+        import config
+        # LLM presence is on by default; static strings remain as fallback
+        self.assertTrue(config.LLM_PRESENCE_ENABLED)
+        self.assertGreater(config.PRESENCE_MAX_TOKENS, 0)
+        self.assertIn("QWEN", config.PRESENCE_BY_CHARACTER)
+        self.assertIn("DEEPSEEK", config.PRESENCE_BY_CHARACTER)
+        self.assertIn("ALL_SLEEP", config.PRESENCE_BY_CHARACTER)
+
+    def test_generate_presence_no_role_card(self):
+        import asyncio
+        from llm_api import generate_presence
+        # Unknown character → returns None (no role card), never raises
+        result = asyncio.run(generate_presence("UNKNOWN"))
+        self.assertIsNone(result)
+
+    def test_presence_fallback_copy_villa(self):
+        import config
+        # Fallback strings should reflect the villa setting, not a PC case
+        self.assertIn("别墅", config.PRESENCE_BY_CHARACTER["ALL_SLEEP"])
 
 
 class WebhookModuleTest(unittest.TestCase):

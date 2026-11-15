@@ -18,6 +18,8 @@ from config import (
     logger, LLM_BASE_URL, LLM_API_KEY,
     CHAT_SAMPLING, CHAT_SAMPLING_EXTRA, MEMORY_SAMPLING,
     MAX_REPLY_TOKENS, MAX_MEMORY_TOKENS,
+    PRESENCE_MAX_TOKENS, PRESENCE_SAMPLING,
+    SYSTEM_PROMPTS,
 )
 
 # Single shared client — httpx connection pooling is handled internally.
@@ -173,6 +175,68 @@ async def generate_reply(
 
     # Model didn't output JSON — use the raw text as the reply
     return {"emotion": "other", "reply": clean_reply_text(raw.strip())}
+
+
+async def generate_presence(
+    character: str,
+    lang: str = "zh",
+    model: str | None = None,
+) -> str | None:
+    """
+    Ask the on-duty girl to invent her own Discord signature status.
+
+    Uses her role card (SYSTEM_PROMPTS[character][lang]) as the persona
+    and asks for a short, in-character "正在……" line. Returns the raw
+    text, or None on any failure so the caller can fall back to the
+    static PRESENCE_BY_CHARACTER strings.
+
+    character : str
+        'QWEN' or 'DEEPSEEK' (ALL_SLEEP is never LLM-generated).
+    lang : str
+        'zh' or 'en'.
+    model : str | None
+        Optional explicit model id; None = whatever is loaded.
+    """
+    role_card = SYSTEM_PROMPTS.get(character, {}).get(lang) \
+        or SYSTEM_PROMPTS.get(character, {}).get("zh", "")
+    if not role_card:
+        logger.warning("No role card for %s — skipping LLM presence", character)
+        return None
+
+    if lang == "zh":
+        instruction = (
+            "你现在是 Discord 上的一名在线少女。请基于你自己的角色卡，"
+            "用一句话、以你自己此刻的语气和性格，写下你的『签名状态』"
+            "（就是 Discord 昵称下面那行小字，格式类似“正在花园喝下午茶”、"
+            "“在泳池里吐泡泡”）。要求：只输出那一句签名本身，不要任何解释、"
+            "引号、标点结尾或前后缀，不超过 12 个字。"
+        )
+    else:
+        instruction = (
+            "You are an online girl on Discord. Based on your role card, "
+            "write your status line in one short sentence, in your own "
+            "voice and personality (e.g. \"sipping tea in the garden\", "
+            "\"blowing bubbles in the pool\"). Requirements: output ONLY "
+            "that status line — no explanation, quotes, trailing "
+            "punctuation, or prefixes. Keep it under 12 words."
+        )
+
+    messages = [
+        {"role": "system", "content": role_card},
+        {"role": "user", "content": instruction},
+    ]
+    try:
+        raw = await _chat_once(messages, PRESENCE_MAX_TOKENS, PRESENCE_SAMPLING, None, model)
+    except Exception as exc:
+        logger.error("LLM presence generation failed: %s", exc)
+        return None
+
+    if not raw:
+        return None
+
+    # Clean: strip quotes/parens/prefixes, collapse whitespace, cut length.
+    text = raw.strip().strip("“”\"'（）()【】").split("\n")[0].strip()
+    return text[:24] or None
 
 
 async def summarize_memory(current_memory: str, history: list[dict], lang: str, model: str | None = None) -> str:

@@ -32,7 +32,7 @@ from config import (
     logger, DISCORD_TOKEN, HISTORY_MAXLEN,
     NAME_TRIGGER_KEYWORDS,
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
-    PRESENCE_BY_CHARACTER,
+    PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED,
     SLEEP_REPLY, LOADING_REPLY,
 )
 from utils import (
@@ -41,7 +41,7 @@ from utils import (
 from state import get_character, update_character, get_change_history
 from sniffer import sniff_character
 from prompts import build_system_prompt, build_handover_note, build_loading_note
-from llm_api import generate_reply
+from llm_api import generate_reply, generate_presence
 from webhook import send_as
 from commands import setup_commands
 
@@ -89,8 +89,24 @@ class VrSuiteBot(discord.Client):
     # ── Presence ────────────────────────────────────────────────
 
     async def _apply_presence(self, character: str):
-        """Update the bot's signature status to match the on-duty girl."""
+        """Update the bot's signature status to match the on-duty girl.
+
+        When LLM_PRESENCE_ENABLED and a girl is actually awake, ask the
+        LLM to invent the status line in-character; otherwise fall back
+        to the static PRESENCE_BY_CHARACTER strings (ALL_SLEEP always
+        uses the static copy — nobody is awake to write one).
+        """
         activity = PRESENCE_BY_CHARACTER.get(character, PRESENCE_BY_CHARACTER["ALL_SLEEP"])
+
+        if LLM_PRESENCE_ENABLED and character != "ALL_SLEEP":
+            lang = "zh"  # presence is global (not per-guild); default to zh
+            try:
+                generated = await generate_presence(character, lang)
+                if generated:
+                    activity = generated
+            except Exception as exc:
+                logger.warning("LLM presence unavailable, using static: %s", exc)
+
         try:
             await self.change_presence(activity=discord.Game(name=activity))
             logger.info("Presence updated → %s: '%s'", character, activity)

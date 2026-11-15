@@ -96,11 +96,12 @@ def build_loading_note(lang: str) -> str:
     if lang == "zh":
         return (
             f"\n\n[System State: 模型加载中]\n"
-            f"少女正在艰难地挤进显存里……显卡风扇呼呼转，请稍等 10 秒。"
+            f"少女正在赶回别墅的路上，拖着行李箱挤进房间……请稍等 10 秒。"
         )
     return (
         f"\n\n[System State: Model Loading]\n"
-        f"The girl is squeezing into VRAM... the fans are spinning. Wait ~10s."
+        f"The girl is hurrying back to the villa, dragging her suitcase in... "
+        f"give her ~10s."
     )
 
 
