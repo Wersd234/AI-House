@@ -647,9 +647,17 @@ class VrSuiteBot(discord.Client):
                     try:
                         em = preprocess.CUSTOM_EMOJI_RE.fullmatch(react)
                         if em:
-                            await message.add_reaction(discord.Emoji(
-                                name=em.group(2), id=int(em.group(3)),
-                                animated=em.group(1) == "a"))
+                            # discord.py 2.7: Emoji() can't be built by hand;
+                            # prefer the real cached GuildEmote (doubles as
+                            # authorization), else a PartialEmoji.
+                            eid = int(em.group(3))
+                            emoji_obj = (message.guild.get_emoji(eid)
+                                         if message.guild else None)
+                            if emoji_obj is None:
+                                emoji_obj = discord.PartialEmoji(
+                                    name=em.group(2), id=eid,
+                                    animated=em.group(1) == "a")
+                            await message.add_reaction(emoji_obj)
                         else:
                             await message.add_reaction(react)
                     except Exception as exc:
