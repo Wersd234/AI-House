@@ -26,6 +26,7 @@ import random
 import re
 import time
 from collections import deque
+from datetime import timedelta
 
 import discord
 from discord.ext import tasks
@@ -491,6 +492,47 @@ class VrSuiteBot(discord.Client):
             return message.author.display_name
         return "主人"
 
+    async def _ambient_lines(self, message: discord.Message) -> str:
+        """
+        Ambient feed: human chatter she MISSED since her last reply —
+        labeled `昵称: 内容` line by line, in order. Without this she only
+        ever sees her own Q&A turns and honestly cannot tell what B and C
+        were arguing about two floors up (multi-person rooms).
+        """
+        if message.guild is None:
+            return ""
+        ts = self._last_reply_ts.get(str(message.channel.id), 0)
+        cutoff = (discord.utils.utcnow() - timedelta(seconds=max(time.time() - ts, 0))
+                  if ts else None)
+        human: list = []
+        try:
+            async for m in message.channel.history(limit=12, before=message):
+                if m.author.bot or m.id == message.id:
+                    continue
+                if cutoff is not None and m.created_at < cutoff:
+                    break
+                human.append(m)
+                if len(human) >= 6:
+                    break
+        except discord.HTTPException as exc:
+            logger.debug("Ambient history fetch failed: %s", exc)
+            return ""
+        if not human:
+            return ""
+        human.reverse()
+        names: dict[str, str] = {}
+        for m in human:
+            a = m.author
+            names[str(a.id)] = (a.display_name if isinstance(a, discord.Member)
+                                 else (a.global_name or a.name))
+        lines = []
+        for m in human:
+            txt = preprocess.prettify_text(m.content or "", names, {})
+            if not txt:
+                continue
+            lines.append(f"{names.get(str(m.author.id), '?')}: {txt[:100]}")
+        return "\n".join(lines)
+
     async def _maybe_interject(self, message: discord.Message) -> None:
         """
         Mini-ChannelMind (自由插话): overhear un-summoned chatter — pull the
@@ -685,6 +727,13 @@ class VrSuiteBot(discord.Client):
                 user_text = f"{user_text}\n{snap_text}" if user_text else snap_text
             user_names, channel_names, emoji_map, emoji_roster = build_text_maps(message)
             user_text = preprocess.prettify_text(user_text, user_names, channel_names)
+
+            # ── Ambient feed: the floors she missed since speaking last ──
+            ambient = await self._ambient_lines(message)
+            if ambient:
+                label = ("【旁听·自你上次说话以来的楼层】\n" if lang == "zh"
+                         else "[Overheard since you last spoke, in order]\n")
+                user_text = f"{label}{ambient}\n---\n{user_text}"
 
             # ── Assemble system prompt ──────────────────────────
             extra = ""

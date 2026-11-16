@@ -611,6 +611,39 @@ class HistoryPersistenceTest(unittest.TestCase):
                 self.assertIn('"desc"', SYSTEM_PROMPTS[ch][lang])
 
 
+class AmbientFeedTest(unittest.TestCase):
+    """多人楼层旁听：错过的消息必须按顺序、带昵称进上下文。"""
+
+    def test_labels_names_in_order(self):
+        import asyncio
+        from types import SimpleNamespace
+        import discord
+        import main as mainmod
+
+        bot = mainmod.VrSuiteBot.__new__(mainmod.VrSuiteBot)
+        bot._last_reply_ts = {}
+
+        def mk(mid, name, text):
+            author = SimpleNamespace(id=mid, bot=False,
+                                     global_name=name, name=name)
+            return SimpleNamespace(id=mid, author=author, content=text,
+                                   created_at=discord.utils.utcnow())
+
+        # discord.history 是新→旧，模拟这个顺序
+        msgs = [mk(3, "C", "我反对"), mk(2, "B", "今天吃药了吗"), mk(1, "A", "开会了")]
+
+        async def fake_history(limit=None, before=None):
+            for m in msgs:
+                yield m
+
+        guild = SimpleNamespace(id=9)
+        channel = SimpleNamespace(id=7, history=fake_history, guild=guild)
+        message = SimpleNamespace(id=99, channel=channel, guild=guild, content="")
+        out = asyncio.run(bot._ambient_lines(message))
+        self.assertLess(out.index("A: 开会了"), out.index("B: 今天吃药了吗"))
+        self.assertLess(out.index("B: 今天吃药了吗"), out.index("C: 我反对"))
+
+
 class TimezoneTest(unittest.TestCase):
     """手表校准：注入时间必须走 TIMEZONE，不再是容器 UTC。"""
 
