@@ -9,6 +9,10 @@
 #
 #   required:  DISCORD_BOT_TOKEN
 #   optional:  LLM_BASE_URL  (defaults to the host's local LLM)
+#
+# ⚠️ Portainer 更新方式：勾选 **Rebuild the image**（从 git 重新构建）。
+#    不要勾 **Re-pull image** —— vrsuite:latest 是本仓库源码本地构建的镜像，
+#    不在任何镜像仓库里，Re-pull 会报 "pull access denied for vrsuite"。
 
 services:
   vrsuite:

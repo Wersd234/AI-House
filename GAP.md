@@ -152,7 +152,7 @@
 - [ ] 邀请链接权限含 **Manage Webhooks**（`permissions=536955904`）
 - [ ] Portainer → Stacks → Add stack → Repository
 - [ ] `https://github.com/Wersd234/AI-House.git`（ref `refs/heads/main`，Compose Path `docker-compose.yml`）
-- [ ] 勾选 Build
+- [ ] 勾选 **Rebuild the image**（更新代码就靠它；**不要勾 Re-pull image**，本地构建镜像会报 pull access denied）
 - [ ] Environment variables 填 `DISCORD_BOT_TOKEN`（及可选覆盖占位）
 - [ ] Deploy the stack
 
