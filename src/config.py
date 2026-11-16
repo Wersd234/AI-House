@@ -221,6 +221,21 @@ NAME_TRIGGER_KEYWORDS = [
 # Set 0 to disable (strict @/reply/name-call only).
 FOLLOWUP_WINDOW_SEC = int(_env("FOLLOWUP_WINDOW_SEC", "180"))
 
+# ── Owner / 主人 (single, from .env) ───────────────────────────────
+# The resident who bought the suite and keeps the GPUs fed. When this
+# user talks, the girls notice WITHOUT an @ (owner is always hot), and
+# a special relationship note is injected into every prompt.
+# Empty string = feature off. Exactly ONE owner.
+OWNER_USER_ID = _env("OWNER_USER_ID", "")
+
+# ── Free interjection (自由插话) ───────────────────────────────────
+# Un-triggered chatter gets overheard: with INTERJECT_CHANCE probability
+# we ask the on-duty girl "want to butt in?" — SHE decides (reply may be
+# empty = staying quiet). Cooldown keeps her from hijacking the channel.
+INTERJECT_ENABLED = _bool_env("INTERJECT_ENABLED", "true")
+INTERJECT_CHANCE = min(max(float(_env("INTERJECT_CHANCE", "0.15")), 0.0), 1.0)
+INTERJECT_COOLDOWN_SEC = int(_env("INTERJECT_COOLDOWN_SEC", "120"))
+
 # ── System Prompt Loading ──────────────────────────────────────────
 def _load_prompt(filename: str) -> str:
     path = os.path.join(PROMPTS_DIR, filename)

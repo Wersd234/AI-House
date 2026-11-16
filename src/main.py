@@ -37,6 +37,8 @@ from config import (
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
     MEMORY_ENABLED, MEMORY_EVERY_N_MESSAGES,
     FOLLOWUP_WINDOW_SEC,
+    OWNER_USER_ID, INTERJECT_ENABLED, INTERJECT_CHANCE,
+    INTERJECT_COOLDOWN_SEC,
     VISION_CAPABILITY, IMAGE_INLINE_MAX_BYTES, MAX_IMAGE_ATTACHMENTS,
     EMOJI_ROSTER_SIZE, STICKER_AUTO_COLLECT, REACTIONS_ENABLED,
     SLEEP_REPLY, LOADING_REPLY,
@@ -51,7 +53,7 @@ from state import get_character, update_character, get_change_history
 from sniffer import sniff_character
 from prompts import (
     build_system_prompt, build_handover_note, build_loading_note,
-    build_memory_note,
+    build_memory_note, build_owner_note, build_interject_note,
 )
 from llm_api import generate_reply, generate_presence, summarize_memory
 from webhook import send_as
@@ -454,6 +456,152 @@ class VrSuiteBot(discord.Client):
                 out.append({"role": "assistant", "content": entry.get("content", "")})
         return out
 
+    async def _react_safe(self, message: discord.Message, react: str) -> None:
+        """Attach one reaction (unicode or this-guild custom emoji), never crash."""
+        try:
+            em = preprocess.CUSTOM_EMOJI_RE.fullmatch(react)
+            if em:
+                # discord.py 2.7: Emoji() can't be built by hand; prefer the
+                # real cached GuildEmote (authorization), else PartialEmoji.
+                eid = int(em.group(3))
+                emoji_obj = (message.guild.get_emoji(eid)
+                             if message.guild else None)
+                if emoji_obj is None:
+                    emoji_obj = discord.PartialEmoji(
+                        name=em.group(2), id=eid, animated=em.group(1) == "a")
+                await message.add_reaction(emoji_obj)
+            else:
+                await message.add_reaction(react)
+        except Exception as exc:
+            logger.debug("Reaction failed on msg %s: %s", message.id, exc)
+
+    def _owner_name(self, message: discord.Message) -> str:
+        """Display name of OWNER_USER_ID (cached member > trigger author > '主人')."""
+        try:
+            oid = int(OWNER_USER_ID)
+        except (TypeError, ValueError):
+            return "主人"
+        if message.guild is not None:
+            mem = message.guild.get_member(oid)
+            if mem is not None:
+                return mem.display_name
+        if message.author.id == oid:
+            return message.author.display_name
+        return "主人"
+
+    async def _maybe_interject(self, message: discord.Message) -> None:
+        """
+        Mini-ChannelMind (自由插话): overhear un-summoned chatter — pull the
+        channel's recent human messages, ask the on-duty girl if she wants
+        to butt in. SHE decides: an empty reply means she kept quiet, and
+        she can still drop one reaction. Probability + cooldown keep it
+        at a believable human frequency.
+        """
+        if not INTERJECT_ENABLED or get_character() == "ALL_SLEEP":
+            return
+        if len((message.content or "").strip()) < 3:
+            return
+        if random.random() > INTERJECT_CHANCE:
+            return
+        channel_id = str(message.channel.id)
+        if time.time() - self._last_reply_ts.get(channel_id, 0) < INTERJECT_COOLDOWN_SEC:
+            return
+
+        guild_id = str(message.guild.id) if message.guild else str(message.author.id)
+        lang = get_server_language(guild_id)
+        character = get_character()
+
+        # ── overhear the room (not just her own conversations) ──
+        try:
+            msgs = [m async for m in message.channel.history(limit=15)
+                    if not m.author.bot]
+        except discord.HTTPException as exc:
+            logger.debug("Interject history failed: %s", exc)
+            return
+        msgs.reverse()
+        if len(msgs) < 2:
+            return
+
+        names: dict[str, str] = {}
+        for m in msgs:
+            a = m.author
+            names[str(a.id)] = (a.display_name if isinstance(a, discord.Member)
+                                 else (a.global_name or a.name))
+        if message.guild is not None:
+            for m in msgs:
+                for uid in preprocess.USER_MENTION_RE.findall(m.content or ""):
+                    if uid not in names:
+                        try:
+                            mem = message.guild.get_member(int(uid))
+                        except (ValueError, TypeError):
+                            mem = None
+                        if mem is not None:
+                            names[uid] = mem.display_name
+        lines = [
+            f"{names.get(str(m.author.id), '?')}: "
+            f"{preprocess.prettify_text(m.content or '', names, {})[:120]}"
+            for m in msgs
+        ]
+        transcript = "\n".join(lines[-12:])
+
+        # ── ask her, in persona, whether she wants to speak ──
+        extra = build_interject_note(lang)
+        if OWNER_USER_ID:
+            extra += build_owner_note(lang, self._owner_name(message), character)
+        if MEMORY_ENABLED:
+            extra += build_memory_note(lang, get_guild_memory(guild_id))
+        system_prompt = build_system_prompt(character, lang, extra_notes=extra)
+
+        if lang == "zh":
+            user_block = f"【频道闲聊·最近】\n{transcript}\n（要说点什么吗？不想说就留空）"
+        else:
+            user_block = (f"[Overheard chatter]\n{transcript}\n"
+                          "(Want to say something? Leave it empty if not.)")
+
+        llm_resp = await generate_reply(
+            [{"role": "system", "content": system_prompt},
+             {"role": "user", "content": user_block}])
+        if not llm_resp:
+            return
+
+        # Reaction-only participation — sometimes a real person just slaps
+        # a 😂 on a message without saying anything.
+        if REACTIONS_ENABLED:
+            react = preprocess.clean_reaction(llm_resp.get("reaction"))
+            if react:
+                await self._react_safe(message, react)
+
+        reply_text = (llm_resp.get("reply") or "").strip()
+        if not reply_text:
+            return  # she chose to stay quiet — a very human decision
+
+        man = stickers.load_manifest()
+        reply_text, sticker_tags = preprocess.extract_stickers(
+            reply_text, stickers.known_tags(man))
+        if sticker_tags:
+            stickers.bump_uses(sticker_tags)
+
+        _, _, emoji_map, _ = build_text_maps(message)
+        for bubble in self._split_bubbles(reply_text):
+            await send_as(message.channel, character,
+                          preprocess.apply_guild_emojis(bubble, emoji_map))
+        for tag in sticker_tags[:1]:
+            p = stickers.path_for(tag, man)
+            if p:
+                await send_as(message.channel, character, "",
+                              files=[discord.File(p)])
+
+        self._last_reply_ts[channel_id] = time.time()
+        if channel_id not in self.history:
+            self.history[channel_id] = deque(maxlen=HISTORY_MAXLEN)
+        self.history[channel_id].append(
+            {"role": "assistant", "content": reply_text})
+        if MEMORY_ENABLED:
+            self._queue_memory(channel_id,
+                               {"role": "assistant", "content": reply_text})
+        logger.info("💭 %s 自由插话 #%s: %s", character, channel_id,
+                    reply_text[:60])
+
     @staticmethod
     def _split_bubbles(text: str, max_len: int = 40, max_bubbles: int = 3) -> list[str]:
         """Split a reply into short 'chat bubbles' like a real member typing."""
@@ -497,16 +645,20 @@ class VrSuiteBot(discord.Client):
             and getattr(message.reference.resolved, "author", None) == self.user
         )
         is_name_call = any(kw.lower() in (content or "").lower() for kw in NAME_TRIGGER_KEYWORDS)
+        # The Master speaks → always worth an answer, @ or not.
+        is_owner = bool(OWNER_USER_ID) and str(message.author.id) == OWNER_USER_ID
         # Hot conversation window: she just spoke here → answer follow-ups
         # ("在吗" / "怎么啦") without an @, like a real member would.
         is_hot = (FOLLOWUP_WINDOW_SEC > 0
                   and time.time() - self._last_reply_ts.get(channel_id, 0)
                   < FOLLOWUP_WINDOW_SEC)
 
-        if not (is_mention or is_reply_to_bot or is_name_call or is_hot):
+        if not (is_mention or is_reply_to_bot or is_name_call or is_owner or is_hot):
             # For v1 we only reply to direct summons. A free-speaking /
             # attention model (like Amadeus' ChannelMind) can be grafted on
             # later without touching this path.
+            # ── mini-ChannelMind: maybe she butts in on her own ──
+            await self._maybe_interject(message)
             return
 
         # ── Asleep check ─────────────────────────────────────────
@@ -548,6 +700,11 @@ class VrSuiteBot(discord.Client):
             if MEMORY_ENABLED:
                 memory_text = get_guild_memory(guild_id)
                 extra += build_memory_note(lang, memory_text)
+
+            # 主人 recognition: the one who bought the suite is special.
+            if OWNER_USER_ID:
+                extra += build_owner_note(
+                    lang, self._owner_name(message), character)
 
             # Server emoji roster (she learns which :name: she can use).
             if emoji_roster:
@@ -658,25 +815,7 @@ class VrSuiteBot(discord.Client):
             if REACTIONS_ENABLED:
                 react = preprocess.clean_reaction(llm_resp.get("reaction"))
                 if react:
-                    try:
-                        em = preprocess.CUSTOM_EMOJI_RE.fullmatch(react)
-                        if em:
-                            # discord.py 2.7: Emoji() can't be built by hand;
-                            # prefer the real cached GuildEmote (doubles as
-                            # authorization), else a PartialEmoji.
-                            eid = int(em.group(3))
-                            emoji_obj = (message.guild.get_emoji(eid)
-                                         if message.guild else None)
-                            if emoji_obj is None:
-                                emoji_obj = discord.PartialEmoji(
-                                    name=em.group(2), id=eid,
-                                    animated=em.group(1) == "a")
-                            await message.add_reaction(emoji_obj)
-                        else:
-                            await message.add_reaction(react)
-                    except Exception as exc:
-                        logger.debug("Reaction failed on msg %s: %s",
-                                     message.id, exc)
+                    await self._react_safe(message, react)
 
             # ── Auto-collect memes she actually looked at (GAP 9.11) ──
             if STICKER_AUTO_COLLECT and vision and media_atts:

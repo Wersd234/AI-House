@@ -554,6 +554,35 @@ class TimezoneTest(unittest.TestCase):
         self.assertIn("whale tail", SYSTEM_PROMPTS["QWEN"]["en"])
 
 
+class OwnerInterjectTest(unittest.TestCase):
+    """主人识别注入 + 自由插话开关。"""
+
+    def test_owner_notes_per_character(self):
+        from prompts import build_owner_note
+        q = build_owner_note("zh", "炮姐最真诚的信徒", "QWEN")
+        d = build_owner_note("zh", "炮姐最真诚的信徒", "DEEPSEEK")
+        self.assertIn("主人", q)
+        self.assertIn("炮姐最真诚的信徒", q)
+        self.assertIn("主人", d)
+        self.assertIn("大小姐", q)          # 千问仍保留架子
+        self.assertIn("减半", d)            # 小鲸鱼火力减半
+        eq = build_owner_note("en", "MasterWo", "QWEN")
+        self.assertIn("Master", eq)
+
+    def test_interject_note_both_langs(self):
+        from prompts import build_interject_note
+        self.assertIn("留空", build_interject_note("zh"))
+        self.assertIn("EMPTY", build_interject_note("en"))
+
+    def test_interject_config_sane(self):
+        from config import (OWNER_USER_ID, INTERJECT_ENABLED,
+                            INTERJECT_CHANCE, INTERJECT_COOLDOWN_SEC)
+        self.assertIsInstance(OWNER_USER_ID, str)
+        self.assertIsInstance(INTERJECT_ENABLED, bool)
+        self.assertTrue(0.0 <= INTERJECT_CHANCE <= 1.0)
+        self.assertGreaterEqual(INTERJECT_COOLDOWN_SEC, 0)
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 
