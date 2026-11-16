@@ -4,6 +4,8 @@
 
 基于 **Project Amadeus** 的分层框架改造（config / llm_api / prompts / commands / utils 架构一脉相承）。
 
+> 📋 **上线前必读**：完整的「已完成功能 + 缺口清单 + 上线计划」见 **[GAP.md](./GAP.md)**。
+
 ---
 
 ## ✨ 功能一览
