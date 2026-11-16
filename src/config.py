@@ -24,6 +24,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger("vrsuite")
 
+
+def _env(key: str, default: str) -> str:
+    """Env fetch that treats an EMPTY STRING as unset.
+
+    Portainer stack env panels and compose's `${VAR:-}` inject unset
+    values as empty strings. Plain os.getenv(key, default) would then
+    return "" (not the default) — which once produced an empty webhook
+    name that Discord rejects. This helper falls back to the default
+    for both missing and blank values.
+    """
+    val = os.getenv(key)
+    return val.strip() if val is not None and val.strip() else default
+
+
 # ── Paths ──────────────────────────────────────────────────────────
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -33,6 +47,7 @@ PROMPTS_DIR = os.path.join(PROJECT_ROOT, "properties", "system_prompts")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")                 # active character state
 WEBHOOKS_FILE = os.path.join(DATA_DIR, "webhooks.json")           # per-guild webhook cache
 SETTINGS_FILE = os.path.join(DATA_DIR, "server_settings.json")    # per-guild settings
+MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")               # per-guild long-term memory
 
 # ── Discord ────────────────────────────────────────────────────────
 DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -40,23 +55,23 @@ DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 # ── LLM Backend ────────────────────────────────────────────────────
 # OpenAI-compatible API. The model field is NOT sent to the server —
 # the backend (vLLM / Ollama / SGLang / LMDeploy) uses whatever is loaded.
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8000/v1")
-LLM_API_KEY = os.getenv("LLM_API_KEY", "123")
-CTX_SIZE = int(os.getenv("LLM_CTX_SIZE", "32768"))
+LLM_BASE_URL = _env("LLM_BASE_URL", "http://127.0.0.1:8000/v1")
+LLM_API_KEY = _env("LLM_API_KEY", "123")
+CTX_SIZE = int(_env("LLM_CTX_SIZE", "32768"))
 
 # ── Model Sniffer (心跳嗅探器) ─────────────────────────────────────
 # How often the poller probes the inference endpoint (seconds).
-SNIFFER_INTERVAL_SEC = int(os.getenv("SNIFFER_INTERVAL_SEC", "10"))
+SNIFFER_INTERVAL_SEC = int(_env("SNIFFER_INTERVAL_SEC", "10"))
 # Probe timeout (seconds) — a timeout or connection-refused counts as
 # "all asleep" (全员断电休眠).
-SNIFFER_TIMEOUT_SEC = float(os.getenv("SNIFFER_TIMEOUT_SEC", "3"))
+SNIFFER_TIMEOUT_SEC = float(_env("SNIFFER_TIMEOUT_SEC", "3"))
 # Which probe paths to try, in order (OpenAI-compatible endpoints vary).
 SNIFFER_PROBE_PATHS = ["/v1/models", "/models"]
 # How many CONSECUTIVE failed probes before we declare "全员断电休眠".
 # A single failure is treated as "model loading" (加载中) and keeps the
 # current character — the host may be mid-switch. Only sustained
 # unreachability means the box is off.
-SNIFFER_FAILURES_TO_SLEEP = int(os.getenv("SNIFFER_FAILURES_TO_SLEEP", "3"))
+SNIFFER_FAILURES_TO_SLEEP = int(_env("SNIFFER_FAILURES_TO_SLEEP", "3"))
 
 # ── Character Detection (角色判定) ─────────────────────────────────
 # Model ID keyword → active character key. First match wins.
@@ -79,45 +94,45 @@ CHARACTER_KEYS = ("QWEN", "DEEPSEEK", "ALL_SLEEP")
 # FALLBACK when generation fails / is disabled.
 # Each entry: {activity, status} — placeholder, fill later.
 PRESENCE_BY_CHARACTER = {
-    "QWEN": os.getenv("PRESENCE_QWEN", "<占位：如「在花园露台享用下午茶」>"),
-    "DEEPSEEK": os.getenv("PRESENCE_DEEPSEEK", "<占位：如「在别墅后院泳池里吐泡泡」>"),
-    "ALL_SLEEP": os.getenv("PRESENCE_SLEEP", "<占位：如「别墅打烊，少女们都回房睡了」>"),
+    "QWEN": _env("PRESENCE_QWEN", "<占位：如「在花园露台享用下午茶」>"),
+    "DEEPSEEK": _env("PRESENCE_DEEPSEEK", "<占位：如「在别墅后院泳池里吐泡泡」>"),
+    "ALL_SLEEP": _env("PRESENCE_SLEEP", "<占位：如「别墅打烊，少女们都回房睡了」>"),
 }
 
 # Whether to ask the LLM to invent the on-duty girl's signature status
 # from her role card. Set to "false" to use the static strings above.
-LLM_PRESENCE_ENABLED = os.getenv("LLM_PRESENCE_ENABLED", "true").lower() in ("1", "true", "yes")
+LLM_PRESENCE_ENABLED = _env("LLM_PRESENCE_ENABLED", "true").lower() in ("1", "true", "yes")
 # Presence signatures are short; keep token budget tiny.
-PRESENCE_MAX_TOKENS = int(os.getenv("PRESENCE_MAX_TOKENS", "64"))
+PRESENCE_MAX_TOKENS = int(_env("PRESENCE_MAX_TOKENS", "64"))
 PRESENCE_SAMPLING = {
     "temperature": 0.9,
     "top_p": 0.95,
 }
 # Auto-refresh the on-duty girl's signature every N seconds so it stays
 # fresh and time-aware (e.g. afternoon tea, evening reading). 7200s = 2h.
-PRESENCE_REFRESH_SEC = int(os.getenv("PRESENCE_REFRESH_SEC", "7200"))
+PRESENCE_REFRESH_SEC = int(_env("PRESENCE_REFRESH_SEC", "7200"))
 
 # ── Webhook Identity (Webhook 身份拟态) ────────────────────────────
 # Per-character webhook identity. Name + avatar URL are placeholders.
 WEBHOOK_IDENTITY = {
     "QWEN": {
-        "name": os.getenv("WEBHOOK_NAME_QWEN", "<占位：如「千问大小姐」>"),
-        "avatar_url": os.getenv("WEBHOOK_AVATAR_QWEN", "<占位：持扇少女立绘 URL>"),
+        "name": _env("WEBHOOK_NAME_QWEN", "千问大小姐"),
+        "avatar_url": _env("WEBHOOK_AVATAR_QWEN", ""),
     },
     "DEEPSEEK": {
-        "name": os.getenv("WEBHOOK_NAME_DEEPSEEK", "<占位：如「大肥鱼」>"),
-        "avatar_url": os.getenv("WEBHOOK_AVATAR_DEEPSEEK", "<占位：鲸鱼娘立绘 URL>"),
+        "name": _env("WEBHOOK_NAME_DEEPSEEK", "大肥鱼"),
+        "avatar_url": _env("WEBHOOK_AVATAR_DEEPSEEK", ""),
     },
 }
 
 # ── Immersive Fallback Copy (异常与边界文案) ───────────────────────
 # These are the "沉浸式提示文案" used when the suite is asleep or
-# loading. All placeholder strings — fill in final copy later.
-SLEEP_REPLY = os.getenv(
+# loading. Placeholder strings — final copy can be overridden via env.
+SLEEP_REPLY = _env(
     "SLEEP_REPLY",
     "别墅的灯熄灭了，大门反锁了。千问大小姐和大肥鱼都回房睡下了，请等待房东（宿主）回来。",
 )
-LOADING_REPLY = os.getenv(
+LOADING_REPLY = _env(
     "LOADING_REPLY",
     "少女正在赶回别墅的路上，拖着行李箱挤进房间……请稍等 10 秒。",
 )
@@ -126,6 +141,14 @@ LOADING_REPLY = os.getenv(
 HISTORY_MAXLEN = 20
 MAX_REPLY_TOKENS = 1024
 MAX_MEMORY_TOKENS = 512
+
+# ── Long-term Memory (长期记忆) ────────────────────────────────────
+# After every N user messages in a channel, the recent conversation is
+# summarised (llm_api.summarize_memory) and merged into per-guild memory
+# persisted in data/memory.json. The girl then "remembers" residents'
+# preferences across restarts.
+MEMORY_ENABLED = _env("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
+MEMORY_EVERY_N_MESSAGES = int(_env("MEMORY_EVERY_N_MESSAGES", "10"))
 
 CHAT_SAMPLING = {
     "temperature": 0.85,

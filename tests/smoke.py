@@ -193,5 +193,77 @@ class WebhookModuleTest(unittest.TestCase):
         self.assertIn("DEEPSEEK", config.WEBHOOK_IDENTITY)
 
 
+class EnvFallbackTest(unittest.TestCase):
+    """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
+
+    def test_empty_env_uses_default(self):
+        import os
+        import config
+        key = "PRESENCE_SLEEP_TEST"
+        os.environ[key] = "   "  # blank like compose `:-` injection
+        try:
+            self.assertEqual(config._env(key, "DEFAULT"), "DEFAULT")
+            os.environ[key] = "  real  "
+            self.assertEqual(config._env(key, "DEFAULT"), "real")
+        finally:
+            del os.environ[key]
+
+    def test_missing_env_uses_default(self):
+        import config
+        self.assertEqual(config._env("VRS_UNSET_TEST_KEY", "DEFAULT"), "DEFAULT")
+
+
+class MemoryTest(unittest.TestCase):
+    """Long-term memory: config, helpers round-trip, prompt injection."""
+
+    def test_memory_config_present(self):
+        import config
+        self.assertTrue(config.MEMORY_ENABLED)
+        self.assertGreaterEqual(config.MEMORY_EVERY_N_MESSAGES, 1)
+
+    def test_memory_helpers_roundtrip(self):
+        import utils
+        gid = "test_guild_000"
+        old = utils.get_guild_memory(gid)
+        try:
+            utils.save_guild_memory(gid, "小明喜欢喝可乐")
+            self.assertEqual(utils.get_guild_memory(gid), "小明喜欢喝可乐")
+        finally:
+            utils.save_guild_memory(gid, old)  # restore
+
+    def test_memory_note_injected(self):
+        from prompts import build_memory_note
+        note = build_memory_note("zh", "小明喜欢喝可乐")
+        self.assertIn("长期记忆", note)
+        self.assertIn("小明", note)
+        # Empty memory → no injection at all
+        self.assertEqual(build_memory_note("zh", ""), "")
+
+
+class CommandRegistrationTest(unittest.TestCase):
+    """commands.setup_commands registers all five slash commands."""
+
+    def test_all_commands_registered(self):
+        import commands
+
+        registered = {}
+
+        class FakeTree:
+            def command(self, **kwargs):
+                def deco(fn):
+                    registered[kwargs.get("name")] = fn
+                    return fn
+                return deco
+
+        class FakeBot:
+            tree = FakeTree()
+
+        commands.setup_commands(FakeBot())
+        self.assertEqual(
+            set(registered),
+            {"whoishome", "inspect", "help", "setchannel", "lang"},
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

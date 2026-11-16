@@ -52,6 +52,10 @@ services:
       SLEEP_REPLY: ${SLEEP_REPLY:-}
       LOADING_REPLY: ${LOADING_REPLY:-}
 
+      # ── Long-term memory ────────────────────────────────────
+      MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
+      MEMORY_EVERY_N_MESSAGES: ${MEMORY_EVERY_N_MESSAGES:-10}
+
     # Persist runtime state (state.json / webhooks.json / settings).
     volumes:
       - vrsuite_data:/app/data

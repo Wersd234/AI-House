@@ -31,12 +31,10 @@
 
 #### 1. `.env` 实参
 
-- **现状**：`.env.example` 中 `DISCORD_BOT_TOKEN` 等全部为占位。
-- **必填**：
-  - `DISCORD_BOT_TOKEN`（Discord Bot Token）
-  - `LLM_BASE_URL` / `LLM_API_KEY`（本地推理端点，默认 `http://127.0.0.1:8000/v1`）
-- **占位待替换**：`WEBHOOK_NAME_*`、`WEBHOOK_AVATAR_*`、`PRESENCE_*`、`SLEEP_REPLY`、`LOADING_REPLY`
-- **落地**：复制 `.env.example → .env` 并填写；Portainer 部署时在 stack 环境变量面板填 `DISCORD_BOT_TOKEN`。
+- **现状**：✅ 已在 Portainer 填入 `DISCORD_BOT_TOKEN`、`LLM_BASE_URL=http://192.168.0.58:1234/v1`（局域网 Ollama，容器可达）、`LLM_API_KEY=123`。
+- **已修复**：compose 的 `${VAR:-}` 会把未填项注入**空字符串**——旧代码 `os.getenv(key, default)` 拿到空串会**丢失默认值**（webhook 名变空导致 Discord 拒建）。现已新增 `config._env()` 空串安全读取，留空一律回退内置默认（名字默认「千问大小姐」「大肥鱼」）。
+- **仍待填**：两张角色立绘 URL（`WEBHOOK_AVATAR_*`，留空则用 Discord 默认头像）。
+- **注**：Portainer 里现存的 `LLM_MODEL_NAME` / `TAVILY_API_KEY` / `PTV_DEVELOPER_ID` / `PTV_API_KEY` 是其他项目遗留，**本项目不使用**，可删除。
 
 #### 2. 角色头像立绘缺失
 
@@ -44,24 +42,22 @@
 - **影响**：Webhook 拟态缺头像，退回 Discord 默认头像。
 - **落地**：准备两张立绘（持扇少女 + 穿蓝白女仆裙的鲸鱼娘），放 `resource/` 或图床 URL，填入 `.env`。
 
-#### 3. 广播频道 / 语言设置无指令入口
+#### 3. 广播频道 / 语言设置无指令入口 ✅ 已修复
 
-- **现状**：`save_broadcast_channel` / `save_server_language` 只存在于 `utils.py`，**没有任何斜杠命令调用**；只能手改 `data/server_settings.json`。
-- **影响**：交接班公告、断电公告、中英双语回复都无法通过指令配置。
-- **建议新增指令**：
-  - `/setchannel` — 设置交接班/断电公告的广播频道
-  - `/lang` — 设置服务器语言（zh / en）
-- **涉及文件**：`src/commands.py`、`src/main.py`、`src/utils.py`
+- **曾现状**：`save_broadcast_channel` / `save_server_language` 只存在于 `utils.py`，无指令调用。
+- **现已新增**：
+  - `/setchannel <频道>` — 设置交接班/断电公告的广播频道（仅管理员）
+  - `/lang zh|en` — 设置服务器语言（仅管理员，下拉选项）
+  - `/help` 已同步列出
 
-#### 4. 记忆功能是"半成品"
+#### 4. 记忆功能是"半成品" ✅ 已修复
 
-- **现状**：`summarize_memory()` 在 `llm_api.py` 定义完好，但 **`main.py` 从未调用**，也没有长期记忆文件。
-- **影响**：少女记不住用户偏好 / 跨会话事实，每次重启记忆清零。
-- **建议**：
-  - 新增 `data/memory.json`（按 guild 或按用户存长期记忆）
-  - 接入定时/触发式摘要（如会话结束后或 N 条消息后调用 `summarize_memory`）
-  - 在 `on_message` 组装 prompt 时注入现有记忆
-- **涉及文件**：`src/llm_api.py`、`src/main.py`、`src/config.py`
+- **曾现状**：`summarize_memory()` 定义完好，但 main.py 从未调用，也无长期记忆文件。
+- **现已接入**：
+  - `data/memory.json`（按服务器存长期记忆，Docker 卷持久化）
+  - 每 `MEMORY_EVERY_N_MESSAGES`（默认 10）条用户消息，后台把该频道最近对话摘要合并进记忆（per-guild 锁防并发）
+  - 每次回复前以 `[长期记忆·别墅住户档案]` 注入 system prompt，少女跨重启记得住户偏好
+  - 开关：`MEMORY_ENABLED`（默认 true）
 
 ---
 
@@ -118,8 +114,8 @@
 
 ### C. 建议补齐后再上线
 
-- [ ] `/setchannel` + `/lang` 指令（广播/语言可配置）
-- [ ] 记忆持久化接入（`data/memory.json` + `summarize_memory` 调用）
+- [x] `/setchannel` + `/lang` 指令（广播/语言可配置）— 已完成
+- [x] 记忆持久化接入（`data/memory.json` + `summarize_memory` 调用）— 已完成
 - [ ] 真实 VRAM 占用
 - [ ] 会话历史持久化
 - [ ] 交接班限频

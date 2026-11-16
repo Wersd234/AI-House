@@ -10,7 +10,7 @@ import json
 import sys
 
 from config import (
-    logger, DATA_DIR, SETTINGS_FILE, DISCORD_TOKEN,
+    logger, DATA_DIR, SETTINGS_FILE, MEMORY_FILE, DISCORD_TOKEN,
 )
 
 
@@ -65,6 +65,23 @@ def save_broadcast_channel(guild_id: str, channel_id: str) -> None:
     settings = _load_json(SETTINGS_FILE)
     settings[f"{guild_id}_broadcast"] = channel_id
     _save_json_atomic(SETTINGS_FILE, settings)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Long-term Memory (per-guild)
+# ═══════════════════════════════════════════════════════════════════
+
+def get_guild_memory(guild_id: str) -> str:
+    """Return the long-term memory text for a guild ('' if none)."""
+    mem = _load_json(MEMORY_FILE).get(str(guild_id), "")
+    return mem if isinstance(mem, str) else ""
+
+
+def save_guild_memory(guild_id: str, text: str) -> None:
+    """Persist merged long-term memory for a guild."""
+    data = _load_json(MEMORY_FILE)
+    data[str(guild_id)] = text
+    _save_json_atomic(MEMORY_FILE, data)
 
 
 # ═══════════════════════════════════════════════════════════════════

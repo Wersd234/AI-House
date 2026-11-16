@@ -33,15 +33,20 @@ from config import (
     NAME_TRIGGER_KEYWORDS,
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
+    MEMORY_ENABLED, MEMORY_EVERY_N_MESSAGES,
     SLEEP_REPLY, LOADING_REPLY,
 )
 from utils import (
     run_startup_check, get_server_language, get_broadcast_channel,
+    get_guild_memory, save_guild_memory,
 )
 from state import get_character, update_character, get_change_history
 from sniffer import sniff_character
-from prompts import build_system_prompt, build_handover_note, build_loading_note
-from llm_api import generate_reply, generate_presence
+from prompts import (
+    build_system_prompt, build_handover_note, build_loading_note,
+    build_memory_note,
+)
+from llm_api import generate_reply, generate_presence, summarize_memory
 from webhook import send_as
 from commands import setup_commands
 
@@ -63,6 +68,11 @@ class VrSuiteBot(discord.Client):
 
         # Guard: only announce a handover once per distinct change
         self._handover_announced: tuple[str, str] | None = None  # (from, to)
+
+        # Long-term memory: per-channel message batches awaiting summary
+        self._memory_pending: dict[str, list] = {}
+        # Per-guild lock so two summaries never race on memory.json
+        self._memory_locks: dict[str, asyncio.Lock] = {}
 
     # ── Lifecycle ───────────────────────────────────────────────
 
@@ -220,6 +230,32 @@ class VrSuiteBot(discord.Client):
 
     # ── Helpers ─────────────────────────────────────────────────
 
+    def _queue_memory(self, channel_id: str, message: dict):
+        """Append one message to the channel's pending memory batch."""
+        self._memory_pending.setdefault(channel_id, []).append(message)
+
+    async def _flush_memory(self, guild_id: str, channel_id: str, batch: list, lang: str):
+        """Merge a conversation batch into per-guild long-term memory.
+
+        Uses a per-guild lock so two channels never race on memory.json;
+        concurrent callers skip (their next flush will catch up).
+        """
+        lock = self._memory_locks.setdefault(guild_id, asyncio.Lock())
+        if lock.locked():
+            logger.info("Memory flush skipped (busy) guild %s ch %s", guild_id, channel_id)
+            return
+        async with lock:
+            try:
+                current = get_guild_memory(guild_id)
+                merged = await summarize_memory(current, batch, lang)
+                if merged:
+                    save_guild_memory(guild_id, merged)
+                    logger.info(
+                        "🧠 Memory updated for guild %s (%d msgs)", guild_id, len(batch)
+                    )
+            except Exception as exc:
+                logger.warning("Memory flush failed (guild %s): %s", guild_id, exc)
+
     def _history_as_messages(self, channel_id: str, current_name: str) -> list[dict]:
         out = []
         for entry in self.history[channel_id]:
@@ -309,6 +345,11 @@ class VrSuiteBot(discord.Client):
                 if latest["to"] == character:
                     extra += build_handover_note(lang, latest["from"], character)
 
+            # Long-term memory: inject what the girls remember about residents.
+            if MEMORY_ENABLED:
+                memory_text = get_guild_memory(guild_id)
+                extra += build_memory_note(lang, memory_text)
+
             system_prompt = build_system_prompt(character, lang, extra_notes=extra)
 
             messages = [{"role": "system", "content": system_prompt}]
@@ -334,6 +375,21 @@ class VrSuiteBot(discord.Client):
             self.history[channel_id].append({
                 "role": "assistant", "content": reply_text,
             })
+
+            # ── Memory: batch messages, flush every N user turns ─
+            if MEMORY_ENABLED:
+                self._queue_memory(
+                    channel_id,
+                    {"role": "user", "content": user_text,
+                     "name": message.author.display_name},
+                )
+                self._queue_memory(channel_id, {"role": "assistant", "content": reply_text})
+                user_turns = sum(1 for m in self._memory_pending[channel_id] if m["role"] == "user")
+                if user_turns >= MEMORY_EVERY_N_MESSAGES:
+                    batch = self._memory_pending.pop(channel_id)
+                    asyncio.create_task(
+                        self._flush_memory(guild_id, channel_id, batch, lang)
+                    )
 
             # ── Reply through webhook (身份拟态) ────────────────
             bubbles = self._split_bubbles(reply_text)

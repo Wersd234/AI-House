@@ -75,6 +75,27 @@ def build_system_prompt(
     return base + status_note + extra
 
 
+def build_memory_note(lang: str, memory_text: str) -> str:
+    """A system-prompt injection carrying the guild's long-term memory,
+    so the on-duty girl 'remembers' residents across restarts."""
+    if not memory_text or not memory_text.strip():
+        return ""
+    if lang == "zh":
+        return (
+            "\n\n[长期记忆·别墅住户档案]\n"
+            f"{memory_text.strip()}\n"
+            "以上是别墅里住户们此前留下的事实，自然地运用它们（不要照本宣科、"
+            "不要主动宣布'我记得你'），对不上号的住户就不要套用。"
+        )
+    return (
+        "\n\n[Long-term memory · villa resident files]\n"
+        f"{memory_text.strip()}\n"
+        "These are facts from previous residents of the villa. Use them "
+        "naturally (do not recite them or announce 'I remember you'); "
+        "skip entries that do not match the person you are talking to."
+    )
+
+
 def build_handover_note(lang: str, from_char: str, to_char: str) -> str:
     """A system-prompt injection used right after a handover, so the
     newly-awake girl knows the other one just left."""
@@ -122,4 +143,4 @@ def _character_label_en(character: str) -> str:
 
 
 # Keep the presence map importable from config for convenience.
-__all__ = ["build_system_prompt", "build_handover_note", "build_loading_note"]
+__all__ = ["build_system_prompt", "build_handover_note", "build_loading_note", "build_memory_note"]
