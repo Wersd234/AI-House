@@ -100,6 +100,17 @@ class PromptAssemblyTest(unittest.TestCase):
         self.assertIn("小鲸鱼", p)
         self.assertIn("System Status", p)
 
+    def test_qwen_new_persona(self):
+        # 千问大小姐群友卡核心：折扇大小姐、形象雷点、对小鱼关系、JSON 格式
+        from config import SYSTEM_PROMPTS
+        card = SYSTEM_PROMPTS["QWEN"]["zh"]
+        self.assertTrue(card.strip(), "qwen 角色卡为空")
+        self.assertIn("折扇", card)
+        self.assertIn("食堂阿姨", card)        # 形象雷点必须保留
+        self.assertIn("小鲸鱼", card)          # 与新室友卡联动
+        self.assertIn('"emotion"', card)
+        self.assertIn('"reply"', card)
+
     def test_deepseek_new_persona(self):
         # 小鲸鱼群友卡核心：自称小鲸鱼、大肥鱼是雷点、JSON 输出格式在
         from config import SYSTEM_PROMPTS

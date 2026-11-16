@@ -57,5 +57,5 @@ if __name__ == "__main__":
     os.makedirs(OUT_DIR, exist_ok=True)
     # 千问大小姐: violet→rose, fan
     make_icon("qwen.png", "\U0001FAAD", (124, 91, 235), (236, 72, 153), "千问大小姐")
-    # 大肥鱼: deep blue→cyan, whale
-    make_icon("deepseek.png", "\U0001F40B", (30, 64, 175), (34, 211, 238), "大肥鱼")
+    # 小鲸鱼: deep blue→cyan, whale
+    make_icon("deepseek.png", "\U0001F40B", (30, 64, 175), (34, 211, 238), "小鲸鱼")
