@@ -67,7 +67,7 @@ services:
       TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
       # OS 层时钟（日志时间戳显示 +08:00；镜像无 tzdata 时自动忽略）
       TZ: ${TIMEZONE:-Asia/Shanghai}
-      # 主人（唯一）：她的金主，说话免 @ 必回，prompt 注入特殊关系
+      # 主人（唯一）：像朋友一样的监护人，说话免 @ 必回，prompt 注入关系注记
       OWNER_USER_ID: ${OWNER_USER_ID:-}
       # 自由插话：没被 @ 的闲聊按概率她主动搭腔（自己决定说不说）
       INTERJECT_ENABLED: ${INTERJECT_ENABLED:-true}

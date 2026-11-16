@@ -566,6 +566,8 @@ class OwnerInterjectTest(unittest.TestCase):
         self.assertIn("主人", d)
         self.assertIn("大小姐", q)          # 千问仍保留架子
         self.assertIn("减半", d)            # 小鲸鱼火力减半
+        self.assertIn("像朋友一样的监护人", q)   # 关系底色：监护人不是金主
+        self.assertIn("像朋友一样的监护人", d)
         eq = build_owner_note("en", "MasterWo", "QWEN")
         self.assertIn("Master", eq)
 
