@@ -209,6 +209,13 @@ NAME_TRIGGER_KEYWORDS = [
     "肥鱼", "大鱼", "deepseek", "鲸鱼",
 ]
 
+# ── Hot conversation window (聊热了就不用 @) ───────────────────────
+# After the girl replies in a channel, she keeps listening there for
+# this many seconds — follow-up messages ("在吗", "怎么啦") get answered
+# WITHOUT an @mention, like a real group member mid-conversation.
+# Set 0 to disable (strict @/reply/name-call only).
+FOLLOWUP_WINDOW_SEC = int(_env("FOLLOWUP_WINDOW_SEC", "180"))
+
 # ── System Prompt Loading ──────────────────────────────────────────
 def _load_prompt(filename: str) -> str:
     path = os.path.join(PROMPTS_DIR, filename)

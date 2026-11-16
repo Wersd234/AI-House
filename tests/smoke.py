@@ -516,6 +516,23 @@ class WebhookReuseTest(unittest.TestCase):
         self.assertEqual(cache["99"]["QWEN"], "333")   # 缓存已修正
 
 
+class FollowupWindowTest(unittest.TestCase):
+    """对话热度窗口 + 「先接话再玩梗」规则。"""
+
+    def test_followup_window_config_default(self):
+        from config import FOLLOWUP_WINDOW_SEC
+        self.assertGreaterEqual(FOLLOWUP_WINDOW_SEC, 0)
+
+    def test_cards_teach_answer_first(self):
+        from config import SYSTEM_PROMPTS
+        zh_q = SYSTEM_PROMPTS["QWEN"]["zh"]
+        zh_d = SYSTEM_PROMPTS["DEEPSEEK"]["zh"]
+        self.assertIn("先接话", zh_q)
+        self.assertIn("先接话", zh_d)
+        self.assertIn("答非所问", zh_q)   # 反面示例钉住行为
+        self.assertIn("Answer first", SYSTEM_PROMPTS["QWEN"]["en"])
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

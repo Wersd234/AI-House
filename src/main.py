@@ -24,6 +24,7 @@ import asyncio
 import base64
 import random
 import re
+import time
 from collections import deque
 
 import discord
@@ -35,6 +36,7 @@ from config import (
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
     MEMORY_ENABLED, MEMORY_EVERY_N_MESSAGES,
+    FOLLOWUP_WINDOW_SEC,
     VISION_CAPABILITY, IMAGE_INLINE_MAX_BYTES, MAX_IMAGE_ATTACHMENTS,
     EMOJI_ROSTER_SIZE, STICKER_AUTO_COLLECT, REACTIONS_ENABLED,
     SLEEP_REPLY, LOADING_REPLY,
@@ -233,6 +235,10 @@ class VrSuiteBot(discord.Client):
 
         # Per-channel: conversation history with the bot
         self.history: dict[str, deque] = {}
+
+        # Per-channel: unix time of the girl's last reply — powers the hot
+        # conversation window (follow-ups answered without an @mention).
+        self._last_reply_ts: dict[str, float] = {}
 
         # Sniffer failure counter — consecutive failures before sleep
         self._sniff_failures: int = 0
@@ -491,8 +497,13 @@ class VrSuiteBot(discord.Client):
             and getattr(message.reference.resolved, "author", None) == self.user
         )
         is_name_call = any(kw.lower() in (content or "").lower() for kw in NAME_TRIGGER_KEYWORDS)
+        # Hot conversation window: she just spoke here → answer follow-ups
+        # ("在吗" / "怎么啦") without an @, like a real member would.
+        is_hot = (FOLLOWUP_WINDOW_SEC > 0
+                  and time.time() - self._last_reply_ts.get(channel_id, 0)
+                  < FOLLOWUP_WINDOW_SEC)
 
-        if not (is_mention or is_reply_to_bot or is_name_call):
+        if not (is_mention or is_reply_to_bot or is_name_call or is_hot):
             # For v1 we only reply to direct summons. A free-speaking /
             # attention model (like Amadeus' ChannelMind) can be grafted on
             # later without touching this path.
@@ -631,6 +642,9 @@ class VrSuiteBot(discord.Client):
                               reference=(message if i == 0 else None))
                 if i != len(bubbles) - 1:
                     await asyncio.sleep(random.uniform(0.8, 1.2))
+            if bubbles:
+                # conversation just went hot — follow-ups need no @
+                self._last_reply_ts[channel_id] = time.time()
 
             # Meme attachments go out as their own bubbles (QQ-style:
             # one sticker per bubble, text never rides inside the image).
