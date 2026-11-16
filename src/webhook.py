@@ -62,20 +62,31 @@ async def _get_or_create_webhook(
     cache = _load_webhooks()
     char_cache = cache.setdefault(guild_id, {})
 
-    # 1. Try the cached id
-    cached_id = char_cache.get(character)
-    if cached_id:
-        try:
-            wh = await channel.guild.fetch_webhook(int(cached_id))
-            if wh.channel_id == channel.id:
-                return wh
-        except (discord.NotFound, discord.Forbidden, ValueError):
-            pass  # stale / forbidden — recreate below
-
-    # 2. Create a fresh webhook on this channel
     identity = WEBHOOK_IDENTITY.get(character, {})
     name = identity.get("name", "少女")[:80]
     avatar_url = identity.get("avatar_url") or None
+
+    # 1. Reuse an existing webhook on THIS channel — prefer the cached id,
+    #    fall back to our character's name (self-heals a lost/stale cache
+    #    file without creating duplicate webhooks).
+    #    NOTE: discord.py 2.7 lists webhooks via TextChannel.webhooks();
+    #    there is NO Guild.fetch_webhook(id) — it raised AttributeError.
+    cached_id = char_cache.get(character)
+    try:
+        whs = await channel.webhooks()
+        wh = discord.utils.get(whs, id=int(cached_id)) if cached_id else None
+        if wh is None:
+            wh = discord.utils.get(whs, name=name)
+        if wh is not None:
+            if str(wh.id) != cached_id:
+                char_cache[character] = str(wh.id)
+                _save_webhooks(cache)
+            return wh
+    except (discord.HTTPException, discord.Forbidden, TypeError, ValueError) as exc:
+        logger.warning("Webhook listing failed in #%s (%s): %s — will create",
+                       channel.name, guild_id, exc)
+
+    # 2. Create a fresh webhook on this channel
     avatar_bytes = await _fetch_avatar_bytes(avatar_url) if avatar_url else None
 
     try:

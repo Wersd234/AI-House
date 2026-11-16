@@ -464,6 +464,58 @@ class WebhookSendTest(unittest.TestCase):
         self.assertFalse(am.replied_user)
 
 
+class WebhookReuseTest(unittest.TestCase):
+    """回归：2.7 API 是 TextChannel.webhooks()，不存在 Guild.fetch_webhook(id)。"""
+
+    def _fake_channel(self, webhooks, created):
+        from types import SimpleNamespace
+
+        async def whs():
+            return webhooks
+
+        async def create(**kw):
+            created.append(kw)
+            return SimpleNamespace(id=555, name=kw.get("name", "?"))
+
+        return SimpleNamespace(id=7, name="general", guild=SimpleNamespace(id=99),
+                               webhooks=whs, create_webhook=create)
+
+    def _run(self, cached_id, webhooks):
+        import asyncio
+        import tempfile
+        import webhook
+        tmp = tempfile.mktemp(suffix=".json")
+        orig_file = webhook.WEBHOOKS_FILE
+        webhook.WEBHOOKS_FILE = tmp
+        if cached_id:
+            webhook._save_webhooks({"99": {"QWEN": cached_id}})
+        created = []
+        try:
+            wh = asyncio.run(webhook._get_or_create_webhook(
+                self._fake_channel(webhooks, created), "QWEN"))
+            cache = webhook._load_webhooks()
+        finally:
+            webhook.WEBHOOKS_FILE = orig_file
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        return wh, created, cache
+
+    def test_cached_id_hit_reuses_without_create(self):
+        from types import SimpleNamespace
+        wh, created, _ = self._run(
+            "111", [SimpleNamespace(id=111, name="千问大小姐")])
+        self.assertEqual(wh.id, 111)
+        self.assertEqual(created, [])          # 未重复创建
+
+    def test_stale_id_falls_back_to_name_match(self):
+        from types import SimpleNamespace
+        wh, created, cache = self._run(
+            "999", [SimpleNamespace(id=333, name="千问大小姐")])
+        self.assertEqual(wh.id, 333)          # 按名字自愈
+        self.assertEqual(created, [])
+        self.assertEqual(cache["99"]["QWEN"], "333")   # 缓存已修正
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 
