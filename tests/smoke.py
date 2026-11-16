@@ -440,18 +440,13 @@ class WebhookSendTest(unittest.TestCase):
         import webhook
 
         captured = {}
-        fake_wh = SimpleNamespace(
-            send=lambda **kw: self._capture(captured, kw))
+
+        async def fake_send(**kw):
+            captured.update(kw)
+            return SimpleNamespace(id=1)
 
         async def fake_get(channel, character):
-            return fake_wh
-
-        def _capture(store, kw):
-            store.update(kw)
-
-            async def done():
-                return SimpleNamespace(id=1)
-            return done()
+            return SimpleNamespace(send=fake_send)
 
         orig, webhook._get_or_create_webhook = \
             webhook._get_or_create_webhook, fake_get
