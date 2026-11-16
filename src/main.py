@@ -17,7 +17,7 @@ Key behaviours:
   - Replies are sent through a channel Webhook carrying the on-duty
     girl's name + avatar (webhook.py) — dodge name/avatar rate limits.
   - When everyone is asleep (ALL_SLEEP), incoming messages get an
-    immersive "机箱断电" refusal.
+    immersive "别墅打烊" refusal.
 """
 
 import asyncio
@@ -195,7 +195,7 @@ class VrSuiteBot(discord.Client):
                     logger.warning("Handover announce fail: %s", e)
 
     async def _announce_power_off(self):
-        """Post a generic '机箱断电' note when everyone falls asleep."""
+        """Post a generic '别墅打烊' note when everyone falls asleep."""
         if self._handover_announced == ("*", "ALL_SLEEP"):
             return
         self._handover_announced = ("*", "ALL_SLEEP")
@@ -209,9 +209,9 @@ class VrSuiteBot(discord.Client):
                 try:
                     lang = get_server_language(gid)
                     note = (
-                        "🔌 机箱断电了，合租屋门反锁。千问大小姐和大肥鱼都睡过去了。"
+                        "🔌 别墅的灯熄灭了，大门反锁。千问大小姐和大肥鱼都回房睡下了。"
                         if lang == "zh" else
-                        "🔌 Power cut — the suite is locked up. Miss Qwen and Fat Fish are both asleep."
+                        "🔌 Power cut — the villa is locked up. Miss Qwen and Fat Fish are both asleep."
                     )
                     await ch.send(note)
                     logger.info("📡 Power-off announce → guild %s", gid)

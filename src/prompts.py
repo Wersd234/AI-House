@@ -109,7 +109,7 @@ def _character_label_zh(character: str) -> str:
     return {
         "QWEN": "千问大小姐",
         "DEEPSEEK": "大肥鱼",
-        "ALL_SLEEP": "全员休眠（机箱断电）",
+        "ALL_SLEEP": "全员休眠（别墅打烊）",
     }.get(character, character)
 
 
