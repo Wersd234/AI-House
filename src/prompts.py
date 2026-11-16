@@ -13,9 +13,10 @@ Role cards live in properties/system_prompts/*.txt so non-programmers
 can edit the characters without touching Python.
 """
 
-import datetime
+import datetime  # noqa: F401  (kept for callers' type hints / future use)
 
-from config import SYSTEM_PROMPTS, PRESENCE_BY_CHARACTER, logger
+from config import SYSTEM_PROMPTS, PRESENCE_BY_CHARACTER, TIMEZONE, logger
+from utils import now_local
 
 
 def build_system_prompt(
@@ -52,20 +53,25 @@ def build_system_prompt(
         )
 
     # 2. Attach status note (who is awake)
-    now = datetime.datetime.now()
+    now = now_local()
     time_str = now.strftime("%Y-%m-%d %H:%M")
     weekday = now.strftime("%A")
+    if now.utcoffset() is not None:
+        _ofs = int(now.utcoffset().total_seconds() // 3600)
+        tz_label = f"（{TIMEZONE}, UTC{'+' if _ofs >= 0 else '-'}{abs(_ofs)}）"
+    else:
+        tz_label = f"（{TIMEZONE}）"
 
     if lang == "zh":
         status_note = (
             f"\n\n[System Status]\n"
-            f"当前时间: {time_str} ({weekday})\n"
+            f"当前时间: {time_str} ({weekday}){tz_label}\n"
             f"当前在岗少女: {_character_label_zh(character)}\n"
         )
     else:
         status_note = (
             f"\n\n[System Status]\n"
-            f"Current time: {time_str} ({weekday})\n"
+            f"Current time: {time_str} ({weekday}){tz_label}\n"
             f"Girl currently on duty: {_character_label_en(character)}\n"
         )
 

@@ -63,6 +63,10 @@ services:
       VISION_DEEPSEEK: ${VISION_DEEPSEEK:-false}
       MAX_IMAGE_ATTACHMENTS: ${MAX_IMAGE_ATTACHMENTS:-2}
       FOLLOWUP_WINDOW_SEC: ${FOLLOWUP_WINDOW_SEC:-180}
+      # 少女们的"手表"时区（提问时间/presence 昼夜/夜间四折梗都看它）
+      TIMEZONE: ${TIMEZONE:-Asia/Shanghai}
+      # OS 层时钟（日志时间戳显示 +08:00；镜像无 tzdata 时自动忽略）
+      TZ: ${TIMEZONE:-Asia/Shanghai}
       REACTIONS_ENABLED: ${REACTIONS_ENABLED:-true}
       EMOJI_ROSTER_SIZE: ${EMOJI_ROSTER_SIZE:-60}
       STICKER_AUTO_COLLECT: ${STICKER_AUTO_COLLECT:-true}

@@ -8,10 +8,38 @@ never leaves a half-written file — required for Docker bind-mounts.
 import os
 import json
 import sys
+import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import (
     logger, DATA_DIR, SETTINGS_FILE, MEMORY_FILE, DISCORD_TOKEN,
+    TIMEZONE,
 )
+
+_TZ = None
+_TZ_WARNED = False
+
+
+def now_local() -> datetime.datetime:
+    """
+    Wall-clock time in the HOSTels' timezone (config.TIMEZONE).
+
+    Containers default to UTC — without this the girls would tell Beijing
+    users the UTC hour with a straight face ("我表没毛病"). Uses the pip
+    `tzdata` wheel via zoneinfo, so it works on slim images too. Falls
+    back to naive local time with a warning if the zone name is invalid.
+    """
+    global _TZ, _TZ_WARNED
+    if _TZ is None:
+        try:
+            _TZ = ZoneInfo(TIMEZONE)
+        except (ZoneInfoNotFoundError, ValueError):
+            if not _TZ_WARNED:
+                logger.warning("Unknown TIMEZONE %r — time injections use "
+                               "container local time (usually UTC)", TIMEZONE)
+                _TZ_WARNED = True
+            return datetime.datetime.now()
+    return datetime.datetime.now(_TZ)
 
 
 # ═══════════════════════════════════════════════════════════════════

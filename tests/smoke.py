@@ -533,6 +533,27 @@ class FollowupWindowTest(unittest.TestCase):
         self.assertIn("Answer first", SYSTEM_PROMPTS["QWEN"]["en"])
 
 
+class TimezoneTest(unittest.TestCase):
+    """手表校准：注入时间必须走 TIMEZONE，不再是容器 UTC。"""
+
+    def test_now_local_is_beijing_offset(self):
+        import utils
+        now = utils.now_local()
+        self.assertIsNotNone(now.tzinfo)
+        self.assertEqual(now.utcoffset().total_seconds(), 8 * 3600)
+
+    def test_status_note_carries_timezone_label(self):
+        from prompts import build_system_prompt
+        p = build_system_prompt("QWEN", "zh")
+        self.assertIn("Asia/Shanghai", p)
+        self.assertIn("UTC+8", p)
+
+    def test_qwen_card_knows_whales_face(self):
+        from config import SYSTEM_PROMPTS
+        self.assertIn("鲸鱼尾巴", SYSTEM_PROMPTS["QWEN"]["zh"])
+        self.assertIn("whale tail", SYSTEM_PROMPTS["QWEN"]["en"])
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

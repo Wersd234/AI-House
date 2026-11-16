@@ -23,6 +23,7 @@ from config import (
     SYSTEM_PROMPTS,
 )
 from sniffer import get_sniffed_model
+from utils import now_local
 
 # Single shared client — httpx connection pooling is handled internally.
 # Model name is intentionally NOT hard-coded; the caller may override
@@ -224,7 +225,7 @@ async def generate_presence(
         logger.warning("No role card for %s — skipping LLM presence", character)
         return None
 
-    now = now or datetime.datetime.now()
+    now = now or now_local()
     time_str = now.strftime("%H:%M")
     weekday = now.strftime("%A")
 

@@ -203,6 +203,11 @@ MEMORY_SAMPLING = {
 }
 
 # ── Name-call trigger (呼名必回) ───────────────────────────────────
+# Wall-clock timezone for everything the girls "know" (prompt time
+# injection, day/night presence, 夜间四折 gag). Containers are UTC by
+# default — set this to the residents' actual timezone.
+TIMEZONE = _env("TIMEZONE", "Asia/Shanghai")
+
 # Any mention of these names summons whoever is on duty.
 NAME_TRIGGER_KEYWORDS = [
     "千问", "大小姐", "qwen",

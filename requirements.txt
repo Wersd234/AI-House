@@ -10,3 +10,8 @@ openai>=1.14.0
 
 # Async HTTP client for the model sniffer probes
 httpx>=0.27.0
+
+# IANA timezone database for Python's zoneinfo. python:3.11-slim has no
+# OS tzdata, so ZoneInfo("Asia/Shanghai") would fail without this wheel —
+# it's what lets the girls report Beijing time instead of the container's UTC.
+tzdata>=2024.1
