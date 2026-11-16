@@ -50,7 +50,9 @@ SETTINGS_FILE = os.path.join(DATA_DIR, "server_settings.json")    # per-guild se
 MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")               # per-guild long-term memory
 
 # ── Discord ────────────────────────────────────────────────────────
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+# _env strips accidental whitespace (Portainer panels often add it,
+# which would otherwise produce an opaque 401 at login).
+DISCORD_TOKEN = _env("DISCORD_BOT_TOKEN", "")
 
 # ── LLM Backend ────────────────────────────────────────────────────
 # OpenAI-compatible API. The model field is NOT sent to the server —
