@@ -66,7 +66,41 @@
 
 ### 🟡 第二档：建议补（提升体验 / 完整度）
 
-#### 5. VRAM 占用显示是假数据
+#### 9. QQ→Discord 迁移方案落地清单（2026-11-17 新增，对照迁移文档逐项核实）
+
+**✅ 已实现（无需再动）**
+
+| 迁移文档条目 | 本项目现状 |
+|---|---|
+| send_message 数组分条 + 限流 | `_split_bubbles`（≤4 条）+ 每条间 0.8~1.5s 随机延迟，天然低于 5条/5s |
+| 发送前 sendTyping | `async with message.channel.typing()` 已在生成前触发 |
+| 上下文按 channel_id/Thread 隔离 | 历史与记忆批次都以 `channel_id` 为键，Thread 自带独立 id，公告区不会串进水区 |
+| Markdown 禁长列表/标题 | 两张卡黑名单已禁；Discord 会渲染所以禁得对 |
+| 删掉「合并转发看不了」免责条款 | 我们的卡从未写入该条款 |
+| MESSAGE CONTENT INTENT | README 部署清单已列为必开项 |
+
+**🔧 需改造（小改动，性价比高）**
+
+| # | 项目 | 改动点 |
+|---|---|---|
+| 9.1 | **`<@id>` / `<:emoji:id>` 预处理**（文档坑3） | 喂 LLM 前把 `<@!?(\d+)>` 替换为 `displayName > globalName > username`，`<a?:name:id>` 替换为 `:name:` 文本；否则模型会念数字 ID。新增 `utils.prettify_mentions()` |
+| 9.2 | **静默引用回复**（文档坑 + 映射表 replyToMessageId） | discord.py 2.3 起 `wh.send(reference=message, allowed_mentions=AllowedMentions(replied_user=False))` 可行——回复固定静默挂在触发消息上，不吵醒对方。需把 `send_as` 加 reference 参数 |
+| 9.3 | **Reaction 回应（拍一拍替代）** | 扩展 LLM 输出 JSON 为 `{"emotion","reply","reaction"}`（reaction 可选，单个 emoji）；引擎 `message.add_reaction()` 贴上。Prompt 卡同步加"敷衍/附和无语时贴一个表情，别刷一排"条款 |
+| 9.4 | **SERVER MEMBERS INTENT** | 9.1 解析别人昵称需要成员数据；Developer Portal 开启 + intents.members=True（README 清单补一行） |
+| 9.5 | **分条上限 4→3**（文档建议 2~3 条） | `_split_bubbles(max_bubbles=3)`，一行改动 |
+| 9.6 | **requirements 升 `discord.py>=2.4`** | message_snapshots（9.7）需要 2.4+ |
+| 9.7 | **转发消息 message_snapshots**（映射表第7行） | `on_message` 读 `message.message_snapshots`，拼 `[转发·来自xx]\n正文` 注入 user_text；快照里的图片同时进视觉管线 |
+| 9.8 | **Discord 特色 Markdown 放行**（文档坑4） | 卡黑名单微调：允许 `||剧透||`、`-# 小字吐槽` 偶尔用（zh/en 四张卡各一句） |
+
+**🧱 需新做（工程量较大，按模块）**
+
+| # | 项目 | 说明 |
+|---|---|---|
+| 9.9 | **媒体源扩面**（映射表 get_message_images 行） | 现在只读 `attachments`。补：① `embeds` 里的图片/`image.url`（Tenor/Giphy 动图常走这条）；② 文本内 `<a?:name:id>` → `https://cdn.discordapp.com/emojis/{id}.png` 进视觉管线；③ `message.stickers`——**只取 `format_type` 为 PNG/GIF 的**（`sticker.url` 自带 png 预览，Lottie/JSON 动画过滤掉不喂视觉模型） |
+| 9.10 | **服务器自定义 Emoji 名录注入** | 每 guild 缓存 `name→<:name:id>` 名录（前 N 个）注入 system prompt，模型才会用本服表情回话（Bot 在自己所在服务器发的消息可随意使用任何服务器 emoji，无需 Nitro） |
+| 9.11 | **表情包体系（send_sticker/list/collect 的 DC 平替）** | 本地 `resource/stickers/` + manifest（tag/描述）；回复里出现 `[sticker:tag]` 占位符→引擎把对应图片作为附件发出；`collect_sticker` 平替=识别到别人发的图/emoji/sticker 时自动下载入库并写 manifest。放第三档 |
+
+#### 10. VRAM 占用显示是假数据
 
 - **现状**：`/whoishome` 中 `_VRAM_USAGE` / `_VRAM_DESC` 是占位字符串。
 - **建议**：接 `nvidia-smi` 或推理端点返回真实显存占用。
