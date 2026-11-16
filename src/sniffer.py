@@ -10,7 +10,7 @@ Probe logic
 -----------
 1. GET <base>/v1/models (or /models) with a short timeout.
 2. Inspect the first model ID returned:
-   - contains "deepseek" → DEEPSEEK (大肥鱼)
+   - contains "deepseek" → DEEPSEEK (小鲸鱼)
    - contains "qwen"     → QWEN (千问大小姐)
    - otherwise            → ALL_SLEEP (unknown / not mapped)
 3. Connection-refused or timeout → ALL_SLEEP (全员断电休眠).

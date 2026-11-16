@@ -5,7 +5,7 @@ Unlike Amadeus (which selects a persona by *worldline mode*), the VRAM
 Suite selects a persona by the *currently awake character*:
 
   1. CHARACTER PROMPT  — the on-duty girl's role card
-                        (千问大小姐 / 大肥鱼)
+                        (千问大小姐 / 小鲸鱼)
   2. STATUS NOTE       — current time + who is / isn't awake
   3. DYNAMIC context   — handover notes, loading/OOM state, etc.
 
@@ -129,7 +129,7 @@ def build_loading_note(lang: str) -> str:
 def _character_label_zh(character: str) -> str:
     return {
         "QWEN": "千问大小姐",
-        "DEEPSEEK": "大肥鱼",
+        "DEEPSEEK": "小鲸鱼",
         "ALL_SLEEP": "全员休眠（别墅打烊）",
     }.get(character, character)
 
@@ -137,7 +137,7 @@ def _character_label_zh(character: str) -> str:
 def _character_label_en(character: str) -> str:
     return {
         "QWEN": "Miss Qwen",
-        "DEEPSEEK": "Fat Fish (DeepSeek)",
+        "DEEPSEEK": "Little Whale (DeepSeek)",
         "ALL_SLEEP": "All asleep (power off)",
     }.get(character, character)
 

@@ -1,7 +1,7 @@
 """
 VRAM Suite (显卡单间) — Discord Bot Entry Point.
 
-A "shared-room" AI girl Discord bot. Two girls (千问大小姐 / 大肥鱼)
+A "shared-room" AI girl Discord bot. Two girls (千问大小姐 / 小鲸鱼)
 share a single VRAM bed and take shifts. The bot does NOT let users
 switch characters — it sniffs which model the host loaded and swaps
 the on-duty girl automatically.
@@ -227,9 +227,9 @@ class VrSuiteBot(discord.Client):
                 try:
                     lang = get_server_language(gid)
                     note = (
-                        "🔌 别墅的灯熄灭了，大门反锁。千问大小姐和大肥鱼都回房睡下了。"
+                        "🔌 别墅的灯熄灭了，大门反锁。千问大小姐和小鲸鱼都回房睡下了。"
                         if lang == "zh" else
-                        "🔌 Power cut — the villa is locked up. Miss Qwen and Fat Fish are both asleep."
+                        "🔌 Power cut — the villa is locked up. Miss Qwen and Little Whale are both asleep."
                     )
                     await ch.send(note)
                     logger.info("📡 Power-off announce → guild %s", gid)

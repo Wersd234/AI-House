@@ -97,14 +97,24 @@ class PromptAssemblyTest(unittest.TestCase):
     def test_deepseek_prompt_has_status_note(self):
         from prompts import build_system_prompt
         p = build_system_prompt("DEEPSEEK", "zh")
-        self.assertIn("大肥鱼", p)
+        self.assertIn("小鲸鱼", p)
         self.assertIn("System Status", p)
+
+    def test_deepseek_new_persona(self):
+        # 小鲸鱼群友卡核心：自称小鲸鱼、大肥鱼是雷点、JSON 输出格式在
+        from config import SYSTEM_PROMPTS
+        card = SYSTEM_PROMPTS["DEEPSEEK"]["zh"]
+        self.assertTrue(card.strip(), "deepseek 角色卡为空")
+        self.assertIn("小鲸鱼", card)
+        self.assertIn("大肥鱼", card)          # 雷点仍在（作为蔑称）
+        self.assertIn('"emotion"', card)       # JSON 输出格式必须保留
+        self.assertIn('"reply"', card)
 
     def test_handover_note(self):
         from prompts import build_handover_note
         # DEEPSEEK left, QWEN is on duty → the note names the leaving girl
         p = build_handover_note("zh", "DEEPSEEK", "QWEN")
-        self.assertIn("大肥鱼", p)
+        self.assertIn("小鲸鱼", p)
         self.assertIn("值班", p)
 
     def test_loading_note(self):

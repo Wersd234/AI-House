@@ -78,7 +78,7 @@ SNIFFER_FAILURES_TO_SLEEP = int(_env("SNIFFER_FAILURES_TO_SLEEP", "3"))
 # ── Character Detection (角色判定) ─────────────────────────────────
 # Model ID keyword → active character key. First match wins.
 # "qwen"     → 千问大小姐 (QWEN)
-# "deepseek" → 大肥鱼 (DEEPSEEK)
+# "deepseek" → 小鲸鱼 (DEEPSEEK)
 # anything else / unreachable → ALL_SLEEP (全员休眠)
 CHARACTER_KEYWORDS = [
     # (keyword, character_key)
@@ -123,7 +123,7 @@ WEBHOOK_IDENTITY = {
         "avatar_url": _env("WEBHOOK_AVATAR_QWEN", "resource/qwen.png"),
     },
     "DEEPSEEK": {
-        "name": _env("WEBHOOK_NAME_DEEPSEEK", "大肥鱼"),
+        "name": _env("WEBHOOK_NAME_DEEPSEEK", "小鲸鱼"),
         "avatar_url": _env("WEBHOOK_AVATAR_DEEPSEEK", "resource/deepseek.png"),
     },
 }
@@ -133,7 +133,7 @@ WEBHOOK_IDENTITY = {
 # loading. Placeholder strings — final copy can be overridden via env.
 SLEEP_REPLY = _env(
     "SLEEP_REPLY",
-    "别墅的灯熄灭了，大门反锁了。千问大小姐和大肥鱼都回房睡下了，请等待房东（宿主）回来。",
+    "别墅的灯熄灭了，大门反锁了。千问大小姐和小鲸鱼都回房睡下了，请等待房东（宿主）回来。",
 )
 LOADING_REPLY = _env(
     "LOADING_REPLY",
@@ -187,7 +187,7 @@ def _load_prompt(filename: str) -> str:
         logger.warning("Prompt file not found: %s", path)
         return ""
 
-# Role cards are loaded per character key. 千问 / 大肥鱼 placeholders
+# Role cards are loaded per character key. 千问大小姐 / 小鲸鱼
 # live in properties/system_prompts/qwen_zh.txt & deepseek_zh.txt.
 SYSTEM_PROMPTS = {
     "QWEN": {

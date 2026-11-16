@@ -1,6 +1,6 @@
 # 🏠 显卡单间（VRAM Suite）— AI 少女拟态 Discord Bot
 
-一间**宿主为两位少女买下的小合租别墅**。千问大小姐（Qwen）与大肥鱼（DeepSeek）轮流值班，谁被载入显存，谁就出来见客。宿主在后台切换模型，Bot 自动嗅探变身，用户没有切换权。
+一间**宿主为两位少女买下的小合租别墅**。千问大小姐（Qwen）与小鲸鱼（DeepSeek）轮流值班，谁被载入显存，谁就出来见客。宿主在后台切换模型，Bot 自动嗅探变身，用户没有切换权。
 
 基于 **Project Amadeus** 的分层框架改造（config / llm_api / prompts / commands / utils 架构一脉相承）。
 
@@ -12,7 +12,7 @@
 
 | 模块 | 功能 |
 |---|---|
-| 🎭 **双角色拟态** | 千问大小姐（Qwen） / 大肥鱼（DeepSeek），按当前载入模型自动切换 |
+| 🎭 **双角色拟态** | 千问大小姐（Qwen） / 小鲸鱼（DeepSeek），按当前载入模型自动切换 |
 | 📡 **心跳嗅探器** | 每 10 秒探测 `GET /v1/models`，识别当前运行的 Model ID |
 | 🔁 **状态机** | 活跃角色状态机（QWEN / DEEPSEEK / ALL_SLEEP），含交接班历史 |
 | 🎨 **Webhook 拟态** | 发言通过频道 Webhook 伪造对应角色的名字 + 头像（规避改名限流） |
@@ -64,7 +64,7 @@ python3 src/main.py
 | 角色 | 活跃触发条件 | 角色定位 | 典型行为 |
 |---|---|---|---|
 | **千问大小姐**（Qwen） | 探测到模型 ID 含 `qwen` | 屈尊下凡的千金贵族，傲娇体面爱挑剔 | 在别墅花园享用下午茶、书房读书，维持名媛气派 |
-| **大肥鱼**（DeepSeek） | 探测到模型 ID 含 `deepseek` | 霸占泳池的鲸鱼女仆，贪吃摸鱼逆鳞护体 | 在别墅后院泳池里游动，逆鳞是绝不许说她胖 |
+| **小鲸鱼**（DeepSeek） | 探测到模型 ID 含 `deepseek` | 嘴硬傲娇的鲸鱼娘群友，去 AI 味、短句吐槽 | 泡在别墅泳池里当群友，雷点是被人叫"大肥鱼"（但她自己不这么自称） |
 | **全员休眠** | 无推理服务在线 | 别墅打烊 | 展示"别墅打烊，少女们都回房睡了" |
 
 **绝对规则**：严禁用户切换角色。谁在别墅里醒着，谁就出来见客。
@@ -77,7 +77,7 @@ python3 src/main.py
 
 - 探测 `GET http://127.0.0.1:8000/v1/models`
 - 模型 ID 含 `qwen` → **千问当值**
-- 模型 ID 含 `deepseek` → **肥鱼当值**
+- 模型 ID 含 `deepseek` → **小鲸鱼当值**
 - 连接拒绝 / 超时 → **全员断电休眠**（别墅打烊）
 
 状态变化触发：更新 Discord Presence + 可选交接班公告。
@@ -89,7 +89,7 @@ python3 src/main.py
 `src/webhook.py` 为每个 (guild, 角色) 惰性创建/缓存一个频道 Webhook：
 
 - **千问**：发送名 + 高雅傲娇持扇少女立绘
-- **大肥鱼**：发送名 + 顶着头鳍、穿蓝白女仆裙、抱大饭碗的鲸鱼娘立绘
+- **小鲸鱼**：发送名 + 蓝白配色、蓝长发、鲸鱼尾的蒙眼鲸鱼娘立绘
 
 规避 Discord 改名/改头像的严重 API 频率限制。
 
@@ -125,7 +125,7 @@ AI合租房/
 ├── properties/system_prompts/
 │   ├── qwen_zh.txt      # 千问大小姐人设
 │   ├── qwen_en.txt
-│   ├── deepseek_zh.txt  # 大肥鱼人设
+│   ├── deepseek_zh.txt  # 小鲸鱼人设
 │   └── deepseek_en.txt
 ├── resource/            # 立绘占位
 ├── data/                # 运行时数据（状态机 / webhook 缓存）
@@ -176,7 +176,7 @@ docker compose up -d --build
    | `LLM_BASE_URL` | 宿主机 LLM 端点 | `http://host.docker.internal:8000/v1` |
    | `LLM_API_KEY` | LLM API Key | `123` |
    | `WEBHOOK_NAME_QWEN` / `WEBHOOK_AVATAR_QWEN` | 千问显示名/头像 | 占位 |
-   | `WEBHOOK_NAME_DEEPSEEK` / `WEBHOOK_AVATAR_DEEPSEEK` | 大肥鱼显示名/头像 | 占位 |
+   | `WEBHOOK_NAME_DEEPSEEK` / `WEBHOOK_AVATAR_DEEPSEEK` | 小鲸鱼显示名/头像 | 内置图标 |
    | `LLM_PRESENCE_ENABLED` | LLM 动态签名开关 | `true` |
 
 5. **Deploy the stack**。运行时数据（`state.json`、webhook 缓存）持久化在命名卷 `vrsuite_data`。
