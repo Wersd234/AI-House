@@ -10,7 +10,6 @@ __pycache__
 .env.*
 data
 tests
-resource
 DESIGN.md
 Dockerfile
 docker-compose.yml

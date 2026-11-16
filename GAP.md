@@ -36,11 +36,14 @@
 - **仍待填**：两张角色立绘 URL（`WEBHOOK_AVATAR_*`，留空则用 Discord 默认头像）。
 - **注**：Portainer 里现存的 `LLM_MODEL_NAME` / `TAVILY_API_KEY` / `PTV_DEVELOPER_ID` / `PTV_API_KEY` 是其他项目遗留，**本项目不使用**，可删除。
 
-#### 2. 角色头像立绘缺失
+#### 2. 角色头像立绘 ✅ 已内置占位图标
 
-- **现状**：`WEBHOOK_AVATAR_QWEN` / `WEBHOOK_AVATAR_DEEPSEEK` 是占位 URL，`resource/` 目录为空。
-- **影响**：Webhook 拟态缺头像，退回 Discord 默认头像。
-- **落地**：准备两张立绘（持扇少女 + 穿蓝白女仆裙的鲸鱼娘），放 `resource/` 或图床 URL，填入 `.env`。
+- **曾现状**：`resource/` 为空，且代码只支持 URL 头像；`.gitignore` 还会忽略图片导致仓库/镜像里没有。
+- **现已修复**：
+  - `resource/qwen.png`（折扇图标）与 `resource/deepseek.png`（鲸鱼图标）已生成并**随仓库提交、随 Docker 镜像打包**（`tests/gen_avatars.py` 可重新生成）
+  - `webhook.py` 头像加载支持 **http(s) URL 或本地路径**（相对项目根，1MB 上限）
+  - 默认 `WEBHOOK_AVATAR_*=resource/*.png`，开箱即用
+- **升级路径**：把真立绘 URL 填进 `WEBHOOK_AVATAR_*`，或直接覆盖 `resource/*.png` 两个文件（`.gitignore` 对应行已放开）。
 
 #### 3. 广播频道 / 语言设置无指令入口 ✅ 已修复
 

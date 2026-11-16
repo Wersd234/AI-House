@@ -17,9 +17,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# 2) App source + character role cards
+# 2) App source + character role cards + bundled avatar icons
 COPY src ./src
 COPY properties ./properties
+COPY resource ./resource
 
 # 3) Writable data dir (state.json / webhooks.json / server_settings.json)
 #    Runs as a non-root user for container safety.

@@ -12,8 +12,9 @@ venv/
 data/*.json
 data/*.tmp
 
-# Image / resource placeholders
-resource/*.png
-resource/*.jpg
-resource/*.jpeg
-resource/*.webp
+# Image / resource — avatars ship with the repo (delete lines if you
+# prefer hosting art outside git)
+# resource/*.png
+# resource/*.jpg
+# resource/*.jpeg
+# resource/*.webp

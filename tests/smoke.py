@@ -192,6 +192,24 @@ class WebhookModuleTest(unittest.TestCase):
         self.assertIn("QWEN", config.WEBHOOK_IDENTITY)
         self.assertIn("DEEPSEEK", config.WEBHOOK_IDENTITY)
 
+    def test_avatar_local_path_loaded(self):
+        # Bundled placeholder icons must load as real PNG bytes
+        import asyncio
+        import os
+        import config
+        import webhook
+        rel = config.WEBHOOK_IDENTITY["QWEN"]["avatar_url"]
+        data = asyncio.run(webhook._fetch_avatar_bytes(rel))
+        self.assertIsNotNone(data, f"avatar {rel} failed to load")
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")  # PNG magic
+        self.assertLess(len(data), 1024 * 1024)
+
+    def test_avatar_missing_path_returns_none(self):
+        import asyncio
+        import webhook
+        self.assertIsNone(asyncio.run(webhook._fetch_avatar_bytes("resource/nope.png")))
+        self.assertIsNone(asyncio.run(webhook._fetch_avatar_bytes("")))
+
 
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""

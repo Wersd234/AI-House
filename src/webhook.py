@@ -21,7 +21,7 @@ from typing import Optional
 
 import discord
 
-from config import logger, WEBHOOK_IDENTITY, WEBHOOKS_FILE
+from config import logger, WEBHOOK_IDENTITY, WEBHOOKS_FILE, PROJECT_ROOT
 
 
 # ── Webhook cache persistence ───────────────────────────────────────
@@ -90,25 +90,53 @@ async def _get_or_create_webhook(
     return wh
 
 
-async def _fetch_avatar_bytes(url: str) -> Optional[bytes]:
+async def _fetch_avatar_bytes(url_or_path: str) -> Optional[bytes]:
     """
-    Download a remote image into bytes for use as a webhook avatar.
+    Load an avatar image into bytes for use as a webhook avatar.
 
     discord.py's create_webhook accepts a bytes payload for the avatar,
-    not a URL — so we fetch it ourselves. Returns None on any failure
-    (the webhook then uses Discord's default avatar).
+    not a URL — so we load it ourselves. Two sources are supported:
+
+      - http(s)://…   remote image, downloaded with httpx
+      - anything else local file path (relative paths resolve against
+                      the project root, e.g. "resource/qwen.png" which
+                      ships inside the Docker image)
+
+    Returns None on any failure (the webhook then uses Discord's
+    default avatar).
     """
+    source = (url_or_path or "").strip()
+    if not source:
+        return None
+
+    if source.lower().startswith(("http://", "https://")):
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(source)
+                if resp.status_code == 200 and resp.content:
+                    if len(resp.content) <= 1024 * 1024:  # 1 MB
+                        return resp.content
+                    logger.warning("Avatar too large (%d bytes) — skipped", len(resp.content))
+                else:
+                    logger.warning("Avatar download got HTTP %s — skipped", resp.status_code)
+        except Exception as exc:
+            logger.warning("Avatar download failed (%s): %s", source, exc)
+        return None
+
+    # Local file path
+    path = source if os.path.isabs(source) else os.path.join(PROJECT_ROOT, source)
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url)
-            if resp.status_code == 200 and resp.content:
-                # Sanity cap: avatars are tiny; guard against huge payloads
-                if len(resp.content) <= 1024 * 1024:  # 1 MB
-                    return resp.content
-                logger.warning("Avatar too large (%d bytes) — skipped", len(resp.content))
-    except Exception as exc:
-        logger.warning("Avatar download failed (%s): %s", url, exc)
+        if os.path.isfile(path):
+            size = os.path.getsize(path)
+            if size > 1024 * 1024:
+                logger.warning("Avatar file too large (%d bytes) — skipped", size)
+                return None
+            with open(path, "rb") as f:
+                return f.read()
+        logger.warning("Avatar file not found (%s) — using default", path)
+    except OSError as exc:
+        logger.warning("Avatar file read failed (%s): %s", path, exc)
     return None
 
 

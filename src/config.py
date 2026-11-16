@@ -113,15 +113,16 @@ PRESENCE_SAMPLING = {
 PRESENCE_REFRESH_SEC = int(_env("PRESENCE_REFRESH_SEC", "7200"))
 
 # ── Webhook Identity (Webhook 身份拟态) ────────────────────────────
-# Per-character webhook identity. Name + avatar URL are placeholders.
+# Per-character webhook identity. avatar_url accepts http(s) URLs OR
+# local paths (relative to project root, bundled into the Docker image).
 WEBHOOK_IDENTITY = {
     "QWEN": {
         "name": _env("WEBHOOK_NAME_QWEN", "千问大小姐"),
-        "avatar_url": _env("WEBHOOK_AVATAR_QWEN", ""),
+        "avatar_url": _env("WEBHOOK_AVATAR_QWEN", "resource/qwen.png"),
     },
     "DEEPSEEK": {
         "name": _env("WEBHOOK_NAME_DEEPSEEK", "大肥鱼"),
-        "avatar_url": _env("WEBHOOK_AVATAR_DEEPSEEK", ""),
+        "avatar_url": _env("WEBHOOK_AVATAR_DEEPSEEK", "resource/deepseek.png"),
     },
 }
 
