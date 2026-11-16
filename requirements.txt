@@ -1,5 +1,6 @@
 # Discord bot framework with slash command support
-discord.py>=2.3.2
+# 2.4+ for message_snapshots (Discord Message Forwarding) — see GAP #9.6/9.7
+discord.py>=2.4.0
 
 # Environment variable loading from .env file
 python-dotenv>=1.0.0

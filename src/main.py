@@ -36,8 +36,11 @@ from config import (
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
     MEMORY_ENABLED, MEMORY_EVERY_N_MESSAGES,
     VISION_CAPABILITY, IMAGE_INLINE_MAX_BYTES, MAX_IMAGE_ATTACHMENTS,
+    EMOJI_ROSTER_SIZE, STICKER_AUTO_COLLECT, REACTIONS_ENABLED,
     SLEEP_REPLY, LOADING_REPLY,
 )
+import preprocess
+import stickers
 from utils import (
     run_startup_check, get_server_language, get_broadcast_channel,
     get_guild_memory, save_guild_memory,
@@ -53,17 +56,52 @@ from webhook import send_as
 from commands import setup_commands
 
 
-def collect_images(message: discord.Message) -> list:
-    """Return up to MAX_IMAGE_ATTACHMENTS image attachments on a message."""
-    out = []
-    for att in (message.attachments or []):
-        # discord gives content_type like "image/png"; stickers may lack one.
-        ctype = getattr(att, "content_type", None) or ""
-        if ctype.startswith("image/"):
-            out.append(att)
-        if len(out) >= MAX_IMAGE_ATTACHMENTS:
-            break
-    return out
+def collect_media(message: discord.Message) -> tuple[list, list[str]]:
+    """
+    Gather media sources on/around a message (GAP #9.9) — Discord images
+    live in FOUR places, QQ only had one:
+
+      attachments        uploaded images (incl. forwarded-snapshot ones)
+      message.stickers   server stickers (Lottie/JSON filtered out, PNG only)
+      embeds             Tenor/Giphy GIFs and link previews land here
+      custom emoji       <:name:id> inside text → its CDN png
+
+    Returns (attachments, plain_urls), capped at MAX_IMAGE_ATTACHMENTS total.
+    """
+    cap = max(MAX_IMAGE_ATTACHMENTS, 1)
+    atts: list = []
+    urls: list[str] = []
+
+    def full() -> bool:
+        return len(atts) + len(urls) >= cap
+
+    def add_att(a):
+        ctype = getattr(a, "content_type", None) or ""
+        if ctype.startswith("image/") and not full():
+            atts.append(a)
+
+    for a in (message.attachments or []):
+        add_att(a)
+    # forwarded message snapshots (discord.py ≥ 2.4)
+    for snap in (getattr(message, "message_snapshots", None) or []):
+        for a in (getattr(snap, "attachments", None) or []):
+            add_att(a)
+    # server stickers — PNG preview only (Lottie/JSON animation can't be
+    # fed to a vision model)
+    for st in (getattr(message, "stickers", None) or []):
+        if not full():
+            urls.append(f"https://cdn.discordapp.com/stickers/{st.id}.png")
+    # embeds (Tenor/Giphy)
+    for e in (getattr(message, "embeds", None) or []):
+        im = getattr(e, "image", None)
+        url = getattr(im, "url", None) if im else None
+        if url and not full():
+            urls.append(url)
+    # custom emoji mentioned inside text
+    for m in preprocess.GUILD_EMOJI_RE.finditer(message.content or ""):
+        if not full():
+            urls.append(f"https://cdn.discordapp.com/emojis/{m.group(3)}.png")
+    return atts, urls
 
 
 async def _image_part(att) -> dict:
@@ -85,6 +123,26 @@ async def _image_part(att) -> dict:
     except Exception as exc:
         logger.warning("Inline image failed (%s): %s — using URL", att.filename, exc)
     return {"type": "image_url", "image_url": {"url": att.url}}
+
+
+async def _url_data_url(url: str) -> dict:
+    """
+    Fetch a plain media URL (sticker preview / Tenor embed / emoji CDN)
+    and inline it as a base64 data URL; fall back to the raw URL.
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url)
+            ctype = resp.headers.get("content-type", "image/png").split(";")[0]
+            if resp.status_code == 200 and ctype.startswith("image/") \
+                    and 0 < len(resp.content) <= IMAGE_INLINE_MAX_BYTES:
+                b64 = base64.b64encode(resp.content).decode("ascii")
+                return {"type": "image_url",
+                        "image_url": {"url": f"data:{ctype};base64,{b64}"}}
+    except Exception as exc:
+        logger.debug("Media url inline failed (%s): %s", url, exc)
+    return {"type": "image_url", "image_url": {"url": url}}
 
 
 def build_user_content(display_name: str, user_text: str, images: list,
@@ -119,10 +177,55 @@ def build_user_content(display_name: str, user_text: str, images: list,
     return f"{label}\n{note}"
 
 
+def build_text_maps(message: discord.Message):
+    """
+    Resolve the readable-name maps for one message (GAP #9.1 / #9.10).
+
+    Returns (user_names, channel_names, emoji_map, emoji_roster):
+      user_names    {id: displayName} — member nickname > global name > username
+      channel_names {id: name}
+      emoji_map     {name: (id, animated)} — used to turn :name: back into
+                    real server emoji on the way out
+      emoji_roster  ", "-joined ":name:" list for the system prompt ("" if none)
+    """
+    guild = message.guild
+    user_names: dict = {}
+    channel_names: dict = {}
+    emoji_map: dict = {}
+    if guild is not None:
+        for u in (getattr(message, "mentions", None) or []):
+            if isinstance(u, discord.Member):
+                user_names[str(u.id)] = u.display_name
+            elif isinstance(u, discord.User):
+                user_names[str(u.id)] = u.global_name or u.name
+        for uid in preprocess.USER_MENTION_RE.findall(message.content or ""):
+            if uid not in user_names:
+                try:
+                    mem = guild.get_member(int(uid))
+                except (ValueError, TypeError):
+                    mem = None
+                if mem is not None:
+                    user_names[uid] = mem.display_name
+        for cid in preprocess.CHANNEL_MENTION_RE.findall(message.content or ""):
+            try:
+                ch = guild.get_channel(int(cid))
+            except (ValueError, TypeError):
+                ch = None
+            if ch is not None:
+                channel_names[cid] = getattr(ch, "name", cid)
+        for i, e in enumerate(guild.emojis):
+            if i >= EMOJI_ROSTER_SIZE:
+                break
+            emoji_map.setdefault(e.name, (str(e.id), bool(e.animated)))
+    roster = ", ".join(f":{n}:" for n in list(emoji_map)[:EMOJI_ROSTER_SIZE])
+    return user_names, channel_names, emoji_map, roster
+
+
 class VrSuiteBot(discord.Client):
     def __init__(self, *args, **kwargs):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True  # needed to resolve nicknames for <@id> (GAP 9.1/9.4)
         kwargs["intents"] = intents
         super().__init__(*args, **kwargs)
 
@@ -346,7 +449,7 @@ class VrSuiteBot(discord.Client):
         return out
 
     @staticmethod
-    def _split_bubbles(text: str, max_len: int = 40, max_bubbles: int = 4) -> list[str]:
+    def _split_bubbles(text: str, max_len: int = 40, max_bubbles: int = 3) -> list[str]:
         """Split a reply into short 'chat bubbles' like a real member typing."""
         text = (text or "").strip()
         if not text:
@@ -406,7 +509,16 @@ class VrSuiteBot(discord.Client):
             self.history[channel_id] = deque(maxlen=HISTORY_MAXLEN)
 
         async with message.channel.typing():
-            user_text = (content or "").replace(f"<@{self.user.id}>", "").strip()
+            user_text = re.sub(rf"<@!?{self.user.id}>", "", content or "").strip()
+
+            # ── Preprocess: forwarded snapshots + <@id>/emoji → readable
+            #    text, so the model never rambles raw IDs (GAP 9.1/9.7) ──
+            snap_text = preprocess.format_snapshots(
+                getattr(message, "message_snapshots", None))
+            if snap_text:
+                user_text = f"{user_text}\n{snap_text}" if user_text else snap_text
+            user_names, channel_names, emoji_map, emoji_roster = build_text_maps(message)
+            user_text = preprocess.prettify_text(user_text, user_names, channel_names)
 
             # ── Assemble system prompt ──────────────────────────
             extra = ""
@@ -426,16 +538,42 @@ class VrSuiteBot(discord.Client):
                 memory_text = get_guild_memory(guild_id)
                 extra += build_memory_note(lang, memory_text)
 
+            # Server emoji roster (she learns which :name: she can use).
+            if emoji_roster:
+                extra += (
+                    ("\n[可用服务器表情] 回复里写 :名字: 会自动变成本服务器表情：" + emoji_roster)
+                    if lang == "zh" else
+                    ("\n[Server emoji] write :name: in replies, it renders as the "
+                     "server's emoji: " + emoji_roster)
+                )
+            # Sticker library roster (she may attach memes via [sticker:tag]).
+            sticker_man = stickers.load_manifest()
+            sticker_list = stickers.roster(sticker_man)
+            if sticker_list:
+                extra += (
+                    ("\n[表情包库存] 回复里写 [sticker:tag]（最多一个）会附上对应梗图："
+                     + sticker_list)
+                    if lang == "zh" else
+                    ("\n[Meme library] write [sticker:tag] (max one) in your reply "
+                     "to attach that meme: " + sticker_list)
+                )
+
             system_prompt = build_system_prompt(character, lang, extra_notes=extra)
 
             # ── Vision routing: only girls whose host model has vision
-            #    actually receive the image pixels; others get a text note.
+            #    actually receive the pixels; others get a text notice.
+            #    Media comes from attachments + snapshots + stickers +
+            #    embeds + custom emoji in text (GAP 9.9).
             vision = VISION_CAPABILITY.get(character, False)
-            image_ats = collect_images(message)
-            image_input = (
-                [await _image_part(a) for a in image_ats]
-                if (image_ats and vision) else image_ats
-            )
+            media_atts, media_urls = collect_media(message)
+            n_media = len(media_atts) + len(media_urls)
+            if n_media and vision:
+                image_input = (
+                    [await _image_part(a) for a in media_atts]
+                    + [await _url_data_url(u) for u in media_urls]
+                )
+            else:
+                image_input = media_atts + list(media_urls)
             user_content = build_user_content(
                 message.author.display_name, user_text, image_input, vision, lang
             )
@@ -450,6 +588,13 @@ class VrSuiteBot(discord.Client):
                 return
 
             reply_text = llm_resp.get("reply", "……")
+
+            # ── Sticker placeholders: strip [sticker:tag], keep valid ones
+            #    (unknown tags are dropped so she can't invent files) ──
+            reply_text, sticker_tags = preprocess.extract_stickers(
+                reply_text, stickers.known_tags(sticker_man))
+            if sticker_tags:
+                stickers.bump_uses(sticker_tags)
 
             # ── Update history ──────────────────────────────────
             self.history[channel_id].append({
@@ -476,12 +621,51 @@ class VrSuiteBot(discord.Client):
                         self._flush_memory(guild_id, channel_id, batch, lang)
                     )
 
-            # ── Reply through webhook (身份拟态) ────────────────
+            # ── Reply through webhook (身份拟态) ─────────────────
+            #    :name: → real server emoji; first bubble silently quotes
+            #    the trigger message (no ping, GAP 9.2).
             bubbles = self._split_bubbles(reply_text)
             for i, bubble in enumerate(bubbles):
-                await send_as(message.channel, character, bubble)
+                bubble = preprocess.apply_guild_emojis(bubble, emoji_map)
+                await send_as(message.channel, character, bubble,
+                              reference=(message if i == 0 else None))
                 if i != len(bubbles) - 1:
-                    await asyncio.sleep(random.uniform(0.8, 1.5))
+                    await asyncio.sleep(random.uniform(0.8, 1.2))
+
+            # Meme attachments go out as their own bubbles (QQ-style:
+            # one sticker per bubble, text never rides inside the image).
+            for tag in sticker_tags[:1]:
+                path = stickers.path_for(tag, sticker_man)
+                if path:
+                    await send_as(message.channel, character, "",
+                                  files=[discord.File(path)])
+
+            # ── Reaction = the Discord replacement for QQ's poke ────
+            if REACTIONS_ENABLED:
+                react = preprocess.clean_reaction(llm_resp.get("reaction"))
+                if react:
+                    try:
+                        em = preprocess.CUSTOM_EMOJI_RE.fullmatch(react)
+                        if em:
+                            await message.add_reaction(discord.Emoji(
+                                name=em.group(2), id=int(em.group(3)),
+                                animated=em.group(1) == "a"))
+                        else:
+                            await message.add_reaction(react)
+                    except Exception as exc:
+                        logger.debug("Reaction failed on msg %s: %s",
+                                     message.id, exc)
+
+            # ── Auto-collect memes she actually looked at (GAP 9.11) ──
+            if STICKER_AUTO_COLLECT and vision and media_atts:
+                att = media_atts[0]
+                try:
+                    if att.size and att.size <= 4 * 1024 * 1024:
+                        raw = await att.read()
+                        stickers.collect(raw, att.content_type or "",
+                                         (content or att.filename or "")[:40])
+                except Exception as exc:
+                    logger.debug("Sticker collect failed: %s", exc)
 
 
 # ═══════════════════════════════════════════════════════════════════

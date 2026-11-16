@@ -66,7 +66,10 @@
 
 ### 🟡 第二档：建议补（提升体验 / 完整度）
 
-#### 9. QQ→Discord 迁移方案落地清单（2026-11-17 新增，对照迁移文档逐项核实）
+#### 9. QQ→Discord 迁移方案落地清单 ✅ 已全部实现（2026-11-17）
+
+> 落地补充：reaction 通过 JSON 新增可选 `"reaction"` 字段回传（引擎清洗后 `add_reaction`）；
+> 表情名录/表情包库存自动注入 system prompt；偷图自动存数据卷 `data/stickers/`。
 
 **✅ 已实现（无需再动）**
 
@@ -79,7 +82,7 @@
 | 删掉「合并转发看不了」免责条款 | 我们的卡从未写入该条款 |
 | MESSAGE CONTENT INTENT | README 部署清单已列为必开项 |
 
-**🔧 需改造（小改动，性价比高）**
+**✅ 已改造（9.1~9.8，本次完成）**
 
 | # | 项目 | 改动点 |
 |---|---|---|
@@ -92,7 +95,7 @@
 | 9.7 | **转发消息 message_snapshots**（映射表第7行） | `on_message` 读 `message.message_snapshots`，拼 `[转发·来自xx]\n正文` 注入 user_text；快照里的图片同时进视觉管线 |
 | 9.8 | **Discord 特色 Markdown 放行**（文档坑4） | 卡黑名单微调：允许 `||剧透||`、`-# 小字吐槽` 偶尔用（zh/en 四张卡各一句） |
 
-**🧱 需新做（工程量较大，按模块）**
+**✅ 已新做（9.9~9.11，本次完成；9.11 为 MVP：自动偷图+名录+[sticker:tag] 发图）**
 
 | # | 项目 | 说明 |
 |---|---|---|
@@ -143,6 +146,10 @@
 
 ### B. Portainer 从 GitHub 部署
 
+- [ ] **Discord Developer Portal → Bot → Privileged Gateway Intents 全部打开**：
+      `MESSAGE CONTENT INTENT`（否则收不到正文/转发快照）**与 `SERVER MEMBERS INTENT`**
+      （2026-11-17 起必需：解析 `<@id>` 为服务器昵称，缺失会启动报 PrivilegedIntentsRequired）
+- [ ] 邀请链接权限含 **Manage Webhooks**（`permissions=536955904`）
 - [ ] Portainer → Stacks → Add stack → Repository
 - [ ] `https://github.com/Wersd234/AI-House.git`（ref `refs/heads/main`，Compose Path `docker-compose.yml`）
 - [ ] 勾选 Build

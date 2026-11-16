@@ -173,6 +173,18 @@ VISION_CAPABILITY = {
 IMAGE_INLINE_MAX_BYTES = 4 * 1024 * 1024
 MAX_IMAGE_ATTACHMENTS = int(_env("MAX_IMAGE_ATTACHMENTS", "2"))
 
+# ── QQ→Discord 迁移项（GAP 第二档 #9）─────────────────────────────
+# 服务器自定义 emoji 名录注入（教模型用本服务器表情 :name:）
+EMOJI_ROSTER_SIZE = int(_env("EMOJI_ROSTER_SIZE", "60"))
+# 表情包体系：自动偷图入库 + 回复中的 [sticker:tag] 占位符发图
+STICKER_AUTO_COLLECT = _bool_env("STICKER_AUTO_COLLECT", "true")
+STICKER_MAX = int(_env("STICKER_MAX", "50"))
+STICKER_ROSTER_SIZE = int(_env("STICKER_ROSTER_SIZE", "30"))
+STICKER_DIR = os.path.join(DATA_DIR, "stickers")
+STICKER_MANIFEST = os.path.join(DATA_DIR, "stickers.json")
+# 允许角色在 JSON 里回一个 reaction 给触发消息（拍一拍的 DC 平替）
+REACTIONS_ENABLED = _bool_env("REACTIONS_ENABLED", "true")
+
 CHAT_SAMPLING = {
     "temperature": 0.85,
     "top_p": 0.95,

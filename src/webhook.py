@@ -146,23 +146,44 @@ async def send_as(
     content: str,
     *,
     embed: Optional[discord.Embed] = None,
+    reference: Optional[discord.Message] = None,
+    files: Optional[list] = None,
 ) -> None:
     """
     Send a message AS the given character (name + avatar via webhook).
 
+    reference : discord.Message | None
+        Silently quote-reply to that message (native Discord reply) with
+        allowed_mentions fully muted — replied_user=False means NO ping
+        and NO red badge for the original author (GAP #9.2).
+    files : list[discord.File] | None
+        Image attachments (e.g. a [sticker:tag] meme).
+
     Degrades to the bot's own identity if webhooks are unavailable.
     """
+    silent_mentions = discord.AllowedMentions(
+        everyone=False, users=False, roles=False, replied_user=False
+    )
     wh = await _get_or_create_webhook(channel, character)
     if wh is None:
         # Fallback: send as the bot itself
-        await channel.send(content=content, embed=embed)
+        await channel.send(content=content, embed=embed,
+                           reference=reference, files=files,
+                           allowed_mentions=silent_mentions)
         return
 
     kwargs = {"content": content, "wait": True}
     if embed is not None:
         kwargs["embed"] = embed
+    if files:
+        kwargs["files"] = files
+    if reference is not None:
+        kwargs["reference"] = reference
+        kwargs["allowed_mentions"] = silent_mentions
     try:
         await wh.send(**kwargs)
     except discord.HTTPException as exc:
         logger.warning("Webhook send failed: %s — falling back to bot message", exc)
-        await channel.send(content=content, embed=embed)
+        await channel.send(content=content, embed=embed,
+                           reference=reference, files=files,
+                           allowed_mentions=silent_mentions)

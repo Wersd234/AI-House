@@ -342,6 +342,95 @@ class VisionRoutingTest(unittest.TestCase):
         self.assertIn("vision", SYSTEM_PROMPTS["QWEN"]["en"])
 
 
+class PreprocessTest(unittest.TestCase):
+    """GAP #9 文本预处理/后处理层。"""
+
+    def test_prettify_mentions_and_emoji(self):
+        import preprocess
+        t = preprocess.prettify_text(
+            "<@123> 和 <@!456> 在 <#789> 比 <:sadcat:999> <a:party:888>",
+            {"123": "小明"}, {"789": "水群"})
+        self.assertIn("@小明", t)
+        self.assertIn("@用户456", t)      # unknown id degrades readably
+        self.assertIn("#水群", t)
+        self.assertIn(":sadcat:", t)
+        self.assertNotIn("<:", t)         # raw emoji markup all converted
+
+    def test_apply_guild_emojis_roundtrip(self):
+        import preprocess
+        out = preprocess.apply_guild_emojis(
+            "行 :sadcat: :ghost: :nope:",
+            {"sadcat": ("999", False), "ghost": ("777", True)})
+        self.assertIn("<:sadcat:999>", out)
+        self.assertIn("<a:ghost:777>", out)
+        self.assertIn(":nope:", out)      # unknown shortcode untouched
+
+    def test_clean_reaction(self):
+        import preprocess
+        self.assertEqual(preprocess.clean_reaction(" 👍 "), "👍")
+        self.assertEqual(preprocess.clean_reaction("<:xx:123>"), "<:xx:123>")
+        self.assertIsNone(preprocess.clean_reaction("行吧你赢了"))
+        self.assertIsNone(preprocess.clean_reaction(""))
+        self.assertIsNone(preprocess.clean_reaction(None))
+
+    def test_extract_stickers_filters_unknown(self):
+        import preprocess
+        text, tags = preprocess.extract_stickers(
+            "哈 [sticker:st1] [sticker:zz]", {"st1"})
+        self.assertEqual(tags, ["st1"])
+        self.assertNotIn("[sticker", text)
+        self.assertTrue(text.startswith("哈"))
+
+    def test_format_snapshots(self):
+        from types import SimpleNamespace
+        import preprocess
+        s = SimpleNamespace(content="原话", author=SimpleNamespace(display_name="阿强"))
+        out = preprocess.format_snapshots([s])
+        self.assertIn("[转发的消息·来自 阿强] 原话", out)
+        self.assertEqual(preprocess.format_snapshots([]), "")
+
+    def test_generate_reply_validates_reaction(self):
+        import asyncio
+        import llm_api
+
+        async def fake_raw(*a, **k):
+            return '{"emotion":"other","reply":"6","reaction":"太长不合法了啦"}'
+
+        orig, llm_api._chat_once = llm_api._chat_once, fake_raw
+        try:
+            r = asyncio.run(llm_api.generate_reply([{"role": "user", "content": "x"}]))
+        finally:
+            llm_api._chat_once = orig
+        self.assertEqual(r.get("reply"), "6")
+        self.assertNotIn("reaction", r)   # invalid value dropped, never sent
+
+
+class StickerLibTest(unittest.TestCase):
+    """GAP #9.11 表情包库：偷图入库 → 名录 → 取路径。"""
+
+    def test_collect_roster_path_roundtrip(self):
+        import stickers
+        data = b"\x89PNG-tiny-" + os.urandom(48)
+        tag = stickers.collect(data, "image/png", "测试图")
+        if tag is None:
+            self.skipTest("sticker library full")
+        try:
+            self.assertIn(tag, stickers.known_tags())
+            self.assertIsNotNone(stickers.path_for(tag))
+            self.assertIn(f"[sticker:{tag}]", stickers.roster())
+            # same bytes = already owns → no duplicate
+            self.assertIsNone(stickers.collect(data, "image/png", ""))
+            # unsupported type rejected
+            self.assertIsNone(stickers.collect(b"plain text", "text/plain", ""))
+        finally:
+            path = stickers.path_for(tag)
+            if path:
+                os.remove(path)
+            man = stickers.load_manifest()
+            man.pop(tag, None)
+            stickers._save(man)
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

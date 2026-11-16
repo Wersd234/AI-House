@@ -58,6 +58,10 @@ services:
       VISION_QWEN: ${VISION_QWEN:-true}
       VISION_DEEPSEEK: ${VISION_DEEPSEEK:-false}
       MAX_IMAGE_ATTACHMENTS: ${MAX_IMAGE_ATTACHMENTS:-2}
+      REACTIONS_ENABLED: ${REACTIONS_ENABLED:-true}
+      EMOJI_ROSTER_SIZE: ${EMOJI_ROSTER_SIZE:-60}
+      STICKER_AUTO_COLLECT: ${STICKER_AUTO_COLLECT:-true}
+      STICKER_MAX: ${STICKER_MAX:-50}
 
     # Persist runtime state (state.json / webhooks.json / settings).
     volumes:

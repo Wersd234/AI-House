@@ -179,6 +179,14 @@ async def generate_reply(
     if parsed is not None:
         if isinstance(parsed.get("reply"), str):
             parsed["reply"] = clean_reply_text(parsed["reply"])
+        # Optional reaction (DC replacement for QQ's poke) — validated,
+        # dropped if malformed so a hallucinated value never reaches the API.
+        from preprocess import clean_reaction
+        react = clean_reaction(parsed.get("reaction"))
+        if react:
+            parsed["reaction"] = react
+        else:
+            parsed.pop("reaction", None)
         return parsed
 
     # Model didn't output JSON — use the raw text as the reply
