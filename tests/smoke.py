@@ -431,6 +431,44 @@ class StickerLibTest(unittest.TestCase):
             stickers._save(man)
 
 
+class WebhookSendTest(unittest.TestCase):
+    """回归：Webhook.send 不支持 reference（discord.py 2.7.1），webhook 路径必须丢弃它。"""
+
+    def test_webhook_path_drops_reference(self):
+        import asyncio
+        from types import SimpleNamespace
+        import webhook
+
+        captured = {}
+        fake_wh = SimpleNamespace(
+            send=lambda **kw: self._capture(captured, kw))
+
+        async def fake_get(channel, character):
+            return fake_wh
+
+        def _capture(store, kw):
+            store.update(kw)
+
+            async def done():
+                return SimpleNamespace(id=1)
+            return done()
+
+        orig, webhook._get_or_create_webhook = \
+            webhook._get_or_create_webhook, fake_get
+        try:
+            asyncio.run(webhook.send_as(
+                SimpleNamespace(), "QWEN", "hi",
+                reference=SimpleNamespace(id=99),
+            ))
+        finally:
+            webhook._get_or_create_webhook = orig
+        self.assertEqual(captured.get("content"), "hi")
+        self.assertNotIn("reference", captured)
+        am = captured.get("allowed_mentions")
+        self.assertIsNotNone(am)
+        self.assertFalse(am.replied_user)
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

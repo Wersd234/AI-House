@@ -87,7 +87,7 @@
 | # | 项目 | 改动点 |
 |---|---|---|
 | 9.1 | **`<@id>` / `<:emoji:id>` 预处理**（文档坑3） | 喂 LLM 前把 `<@!?(\d+)>` 替换为 `displayName > globalName > username`，`<a?:name:id>` 替换为 `:name:` 文本；否则模型会念数字 ID。新增 `utils.prettify_mentions()` |
-| 9.2 | **静默引用回复**（文档坑 + 映射表 replyToMessageId） | discord.py 2.3 起 `wh.send(reference=message, allowed_mentions=AllowedMentions(replied_user=False))` 可行——回复固定静默挂在触发消息上，不吵醒对方。需把 `send_as` 加 reference 参数 |
+| 9.2 | ~~静默引用回复~~ ⚠️ 已降级 | **实测结论**：Discord incoming webhook 原生不支持回复/引用（discord.py 2.7.1 `Webhook.send` 无 `reference`；discord-api-docs#3282 自 2020 未实现）。已改为：webhook 气泡直接落在唤醒消息下方（观感即接话），`allowed_mentions` 全程静音防误 @；native quote 仅在 webhook 不可用的 bot 兜底路径生效。彻底实现需等 Discord 开放或改用 button-interaction 方案 |
 | 9.3 | **Reaction 回应（拍一拍替代）** | 扩展 LLM 输出 JSON 为 `{"emotion","reply","reaction"}`（reaction 可选，单个 emoji）；引擎 `message.add_reaction()` 贴上。Prompt 卡同步加"敷衍/附和无语时贴一个表情，别刷一排"条款 |
 | 9.4 | **SERVER MEMBERS INTENT** | 9.1 解析别人昵称需要成员数据；Developer Portal 开启 + intents.members=True（README 清单补一行） |
 | 9.5 | **分条上限 4→3**（文档建议 2~3 条） | `_split_bubbles(max_bubbles=3)`，一行改动 |

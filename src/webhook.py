@@ -153,33 +153,36 @@ async def send_as(
     Send a message AS the given character (name + avatar via webhook).
 
     reference : discord.Message | None
-        Silently quote-reply to that message (native Discord reply) with
-        allowed_mentions fully muted — replied_user=False means NO ping
-        and NO red badge for the original author (GAP #9.2).
-    files : list[discord.File] | None
-        Image attachments (e.g. a [sticker:tag] meme).
+        Native reply/quote — supported ONLY on the bot-identity fallback
+        path. Discord incoming webhooks CANNOT create reply/quote messages
+        (discord.py 2.7.1's Webhook.send has no `reference`; the capability
+        is an open request, discord-api-docs#3282). On the webhook path we
+        simply post in-channel — her bubble naturally lands right under the
+        message that woke her, which reads as a reply in practice.
 
-    Degrades to the bot's own identity if webhooks are unavailable.
+    files : list[discord.File] | None
+        Image attachments (e.g. a [sticker:tag] meme) — webhooks support these.
+
+    allowed_mentions is always muted so reply text never pings anyone by
+    accident. Degrades to the bot's own identity if webhooks are unavailable.
     """
     silent_mentions = discord.AllowedMentions(
         everyone=False, users=False, roles=False, replied_user=False
     )
     wh = await _get_or_create_webhook(channel, character)
     if wh is None:
-        # Fallback: send as the bot itself
+        # Fallback: send as the bot itself (this path CAN quote natively).
         await channel.send(content=content, embed=embed,
                            reference=reference, files=files,
                            allowed_mentions=silent_mentions)
         return
 
-    kwargs = {"content": content, "wait": True}
+    kwargs = {"content": content, "wait": True,
+              "allowed_mentions": silent_mentions}
     if embed is not None:
         kwargs["embed"] = embed
     if files:
         kwargs["files"] = files
-    if reference is not None:
-        kwargs["reference"] = reference
-        kwargs["allowed_mentions"] = silent_mentions
     try:
         await wh.send(**kwargs)
     except discord.HTTPException as exc:
