@@ -162,7 +162,8 @@
 - [x] `/setchannel` + `/lang` 指令（广播/语言可配置）— 已完成
 - [x] 记忆持久化接入（`data/memory.json` + `summarize_memory` 调用）— 已完成
 - [ ] 真实 VRAM 占用
-- [ ] 会话历史持久化
+- [x] 会话历史持久化（`data/history.json`，重启不丢；`HISTORY_MAXLEN` 可配）— 已完成
+- [x] 图片进历史备忘（JSON `desc` 字段：模型一句话记下图里是啥，表情包库名录带描述）— 已完成
 - [ ] 交接班限频
 
 ---

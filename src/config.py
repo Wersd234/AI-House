@@ -48,6 +48,7 @@ STATE_FILE = os.path.join(DATA_DIR, "state.json")                 # active chara
 WEBHOOKS_FILE = os.path.join(DATA_DIR, "webhooks.json")           # per-guild webhook cache
 SETTINGS_FILE = os.path.join(DATA_DIR, "server_settings.json")    # per-guild settings
 MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")               # per-guild long-term memory
+HISTORY_FILE = os.path.join(DATA_DIR, "history.json")             # per-channel rolling transcript
 
 # ── Discord ────────────────────────────────────────────────────────
 # _env strips accidental whitespace (Portainer panels often add it,
@@ -141,7 +142,9 @@ LOADING_REPLY = _env(
 )
 
 # ── Conversation (聊天) ────────────────────────────────────────────
-HISTORY_MAXLEN = 20
+# Rolling per-channel transcript, kept in data/history.json (survives
+# restarts). Length-capped so prompts stay bounded.
+HISTORY_MAXLEN = int(_env("HISTORY_MAXLEN", "20"))
 MAX_REPLY_TOKENS = 1024
 MAX_MEMORY_TOKENS = 512
 

@@ -188,6 +188,13 @@ async def generate_reply(
             parsed["reaction"] = react
         else:
             parsed.pop("reaction", None)
+        # Optional one-line memo of any attached image — kept in history so
+        # she remembers later what that picture was (and can caption memes).
+        desc = parsed.get("desc")
+        if isinstance(desc, str) and desc.strip():
+            parsed["desc"] = desc.strip()[:80]
+        else:
+            parsed.pop("desc", None)
         return parsed
 
     # Model didn't output JSON — use the raw text as the reply

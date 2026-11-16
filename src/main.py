@@ -31,7 +31,7 @@ import discord
 from discord.ext import tasks
 
 from config import (
-    logger, DISCORD_TOKEN, HISTORY_MAXLEN,
+    logger, DISCORD_TOKEN, HISTORY_MAXLEN, HISTORY_FILE,
     NAME_TRIGGER_KEYWORDS,
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
@@ -47,7 +47,7 @@ import preprocess
 import stickers
 from utils import (
     run_startup_check, get_server_language, get_broadcast_channel,
-    get_guild_memory, save_guild_memory,
+    get_guild_memory, save_guild_memory, load_history, save_history,
 )
 from state import get_character, update_character, get_change_history
 from sniffer import sniff_character
@@ -235,8 +235,10 @@ class VrSuiteBot(discord.Client):
 
         self.tree = discord.app_commands.CommandTree(self)
 
-        # Per-channel: conversation history with the bot
-        self.history: dict[str, deque] = {}
+        # Per-channel: conversation history with the bot — loaded from
+        # data/history.json so restarts no longer wipe the girls' memory
+        # of the conversation (GAP #11).
+        self.history: dict[str, deque] = load_history(HISTORY_FILE, HISTORY_MAXLEN)
 
         # Per-channel: unix time of the girl's last reply — powers the hot
         # conversation window (follow-ups answered without an @mention).
@@ -596,6 +598,7 @@ class VrSuiteBot(discord.Client):
             self.history[channel_id] = deque(maxlen=HISTORY_MAXLEN)
         self.history[channel_id].append(
             {"role": "assistant", "content": reply_text})
+        save_history(HISTORY_FILE, self.history)
         if MEMORY_ENABLED:
             self._queue_memory(channel_id,
                                {"role": "assistant", "content": reply_text})
@@ -757,6 +760,13 @@ class VrSuiteBot(discord.Client):
 
             reply_text = llm_resp.get("reply", "……")
 
+            # Image memo (desc): record WHAT the picture was in the text
+            # history — the pixels only exist for this one turn, otherwise
+            # she honestly forgets her own images ("我哪记得你发过啥").
+            memo = (llm_resp.get("desc") or "").strip()
+            hist_text = (f"{user_text} [图片: {memo}]"
+                         if (memo and n_media) else user_text)
+
             # ── Sticker placeholders: strip [sticker:tag], keep valid ones
             #    (unknown tags are dropped so she can't invent files) ──
             reply_text, sticker_tags = preprocess.extract_stickers(
@@ -767,18 +777,19 @@ class VrSuiteBot(discord.Client):
             # ── Update history ──────────────────────────────────
             self.history[channel_id].append({
                 "role": "user",
-                "content": user_text,
+                "content": hist_text,
                 "name": message.author.display_name,
             })
             self.history[channel_id].append({
                 "role": "assistant", "content": reply_text,
             })
+            save_history(HISTORY_FILE, self.history)
 
             # ── Memory: batch messages, flush every N user turns ─
             if MEMORY_ENABLED:
                 self._queue_memory(
                     channel_id,
-                    {"role": "user", "content": user_text,
+                    {"role": "user", "content": hist_text,
                      "name": message.author.display_name},
                 )
                 self._queue_memory(channel_id, {"role": "assistant", "content": reply_text})
@@ -818,13 +829,15 @@ class VrSuiteBot(discord.Client):
                     await self._react_safe(message, react)
 
             # ── Auto-collect memes she actually looked at (GAP 9.11) ──
+            #    her own desc memo becomes the library caption.
             if STICKER_AUTO_COLLECT and vision and media_atts:
                 att = media_atts[0]
                 try:
                     if att.size and att.size <= 4 * 1024 * 1024:
                         raw = await att.read()
                         stickers.collect(raw, att.content_type or "",
-                                         (content or att.filename or "")[:40])
+                                         (content or att.filename or "")[:40],
+                                         desc=memo)
                 except Exception as exc:
                     logger.debug("Sticker collect failed: %s", exc)
 

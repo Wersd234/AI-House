@@ -9,6 +9,7 @@ import os
 import json
 import sys
 import datetime
+from collections import deque
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import (
@@ -110,6 +111,33 @@ def save_guild_memory(guild_id: str, text: str) -> None:
     data = _load_json(MEMORY_FILE)
     data[str(guild_id)] = text
     _save_json_atomic(MEMORY_FILE, data)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Conversation History (per-channel, GAP #11 — survives restarts)
+# ═══════════════════════════════════════════════════════════════════
+
+def load_history(path: str, maxlen: int) -> dict:
+    """Load {channel_id: deque(entries)}; corrupt/missing file = {}."""
+    out: dict[str, deque] = {}
+    for cid, entries in _load_json(path).items():
+        if not isinstance(entries, list):
+            continue
+        dq: deque = deque(maxlen=maxlen)
+        for e in entries:
+            if isinstance(e, dict) and e.get("role") in ("user", "assistant"):
+                dq.append(e)
+        if dq:
+            out[str(cid)] = dq
+    return out
+
+
+def save_history(path: str, history: dict) -> None:
+    """Persist all channel histories (atomic replace, crash-safe)."""
+    try:
+        _save_json_atomic(path, {cid: list(dq) for cid, dq in history.items()})
+    except OSError as exc:
+        logger.warning("History save failed: %s", exc)
 
 
 # ═══════════════════════════════════════════════════════════════════

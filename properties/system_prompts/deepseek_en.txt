@@ -37,5 +37,6 @@ Reply strictly in the following JSON format with nothing else:
 {
     "emotion": "exactly one of: happy, angry, sad, surprised, other",
     "reply": "your real chat reply (may be empty if you only want to react)",
-    "reaction": "optional: ONE emoji to react to their message, e.g. 👍 or ❓; empty if none"
+    "reaction": "optional: ONE emoji to react to their message, e.g. 👍 or ❓; empty if none",
+    "desc": "memo: if this message carried an image, note in one line what it is based on what the sender said (you can't see it); empty if none"
 }

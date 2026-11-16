@@ -408,6 +408,24 @@ class PreprocessTest(unittest.TestCase):
 class StickerLibTest(unittest.TestCase):
     """GAP #9.11 表情包库：偷图入库 → 名录 → 取路径。"""
 
+    def test_collect_with_desc_shows_in_roster(self):
+        import stickers
+        data = b"\x89PNG-desc-" + os.urandom(48)
+        tag = stickers.collect(data, "image/png", "", desc="柴犬疑惑脸")
+        if tag is None:
+            self.skipTest("sticker library full")
+        try:
+            roster = stickers.roster()
+            self.assertIn(f"[sticker:{tag}]", roster)
+            self.assertIn("柴犬疑惑脸", roster)     # 名录可读，她才知道用哪张
+        finally:
+            path = stickers.path_for(tag)
+            if path:
+                os.remove(path)
+            man = stickers.load_manifest()
+            man.pop(tag, None)
+            stickers._save(man)
+
     def test_collect_roster_path_roundtrip(self):
         import stickers
         data = b"\x89PNG-tiny-" + os.urandom(48)
@@ -531,6 +549,66 @@ class FollowupWindowTest(unittest.TestCase):
         self.assertIn("先接话", zh_d)
         self.assertIn("答非所问", zh_q)   # 反面示例钉住行为
         self.assertIn("Answer first", SYSTEM_PROMPTS["QWEN"]["en"])
+
+
+class HistoryPersistenceTest(unittest.TestCase):
+    """GAP #11：会话历史落盘 data/history.json，重启不丢。"""
+
+    def test_roundtrip_and_cap(self):
+        import tempfile
+        from collections import deque
+        import utils
+        tmp = tempfile.mktemp(suffix=".json")
+        hist = {"7": deque([{"role": "user", "content": "a", "name": "u"},
+                             {"role": "assistant", "content": "b"},
+                             {"role": "junk", "content": "x"}], maxlen=20)}
+        try:
+            utils.save_history(tmp, hist)
+            back = utils.load_history(tmp, 20)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        self.assertEqual(len(back["7"]), 2)          # junk 条目被丢弃
+        self.assertEqual(back["7"][0]["content"], "a")
+        self.assertEqual(back["7"][1]["content"], "b")
+
+    def test_cap_applied_on_load(self):
+        import tempfile
+        from collections import deque
+        import utils
+        tmp = tempfile.mktemp(suffix=".json")
+        hist = {"7": deque([{"role": "assistant", "content": str(i)}
+                            for i in range(30)], maxlen=30)}
+        try:
+            utils.save_history(tmp, hist)
+            back = utils.load_history(tmp, 5)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        self.assertEqual(len(back["7"]), 5)          # 只留最近 5 条
+        self.assertEqual(back["7"][-1]["content"], "29")
+
+    def test_generate_reply_keeps_image_memo(self):
+        import asyncio
+        import llm_api
+
+        long = "图" * 200
+
+        async def fake_raw(*a, **k):
+            return ('{"emotion":"other","reply":"收到","desc":"' + long + '"}')
+
+        orig, llm_api._chat_once = llm_api._chat_once, fake_raw
+        try:
+            r = asyncio.run(llm_api.generate_reply([{"role": "user", "content": "x"}]))
+        finally:
+            llm_api._chat_once = orig
+        self.assertEqual(len(r.get("desc", "")), 80)   # 截断防爆上下文
+
+    def test_cards_have_desc_field(self):
+        from config import SYSTEM_PROMPTS
+        for ch in ("QWEN", "DEEPSEEK"):
+            for lang in ("zh", "en"):
+                self.assertIn('"desc"', SYSTEM_PROMPTS[ch][lang])
 
 
 class TimezoneTest(unittest.TestCase):
