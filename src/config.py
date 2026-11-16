@@ -153,6 +153,26 @@ MAX_MEMORY_TOKENS = 512
 MEMORY_ENABLED = _env("MEMORY_ENABLED", "true").lower() in ("1", "true", "yes")
 MEMORY_EVERY_N_MESSAGES = int(_env("MEMORY_EVERY_N_MESSAGES", "10"))
 
+# ── Vision capability (视觉能力) ───────────────────────────────────
+# Per-character vision of the host model actually loaded:
+#   Qwen (VL-capable weights)   → can SEE images (multimodal image_url)
+#   DeepSeek (text-only distill) → CANNOT see images; they become a text
+#                                  notice so the persona never hallucinates
+#                                  image content.
+# Override via env VISION_QWEN / VISION_DEEPSEEK = true|false.
+def _bool_env(key: str, default: str) -> bool:
+    return _env(key, default).lower() in ("1", "true", "yes")
+
+
+VISION_CAPABILITY = {
+    "QWEN": _bool_env("VISION_QWEN", "true"),
+    "DEEPSEEK": _bool_env("VISION_DEEPSEEK", "false"),
+}
+# Images over this size are not inlined as base64 (fall back to URL, which
+# the host must be able to reach; Discord CDN may be unreachable from CN LAN).
+IMAGE_INLINE_MAX_BYTES = 4 * 1024 * 1024
+MAX_IMAGE_ATTACHMENTS = int(_env("MAX_IMAGE_ATTACHMENTS", "2"))
+
 CHAT_SAMPLING = {
     "temperature": 0.85,
     "top_p": 0.95,

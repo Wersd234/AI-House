@@ -21,6 +21,7 @@ Key behaviours:
 """
 
 import asyncio
+import base64
 import random
 import re
 from collections import deque
@@ -34,6 +35,7 @@ from config import (
     SNIFFER_INTERVAL_SEC, SNIFFER_FAILURES_TO_SLEEP,
     PRESENCE_BY_CHARACTER, LLM_PRESENCE_ENABLED, PRESENCE_REFRESH_SEC,
     MEMORY_ENABLED, MEMORY_EVERY_N_MESSAGES,
+    VISION_CAPABILITY, IMAGE_INLINE_MAX_BYTES, MAX_IMAGE_ATTACHMENTS,
     SLEEP_REPLY, LOADING_REPLY,
 )
 from utils import (
@@ -49,6 +51,72 @@ from prompts import (
 from llm_api import generate_reply, generate_presence, summarize_memory
 from webhook import send_as
 from commands import setup_commands
+
+
+def collect_images(message: discord.Message) -> list:
+    """Return up to MAX_IMAGE_ATTACHMENTS image attachments on a message."""
+    out = []
+    for att in (message.attachments or []):
+        # discord gives content_type like "image/png"; stickers may lack one.
+        ctype = getattr(att, "content_type", None) or ""
+        if ctype.startswith("image/"):
+            out.append(att)
+        if len(out) >= MAX_IMAGE_ATTACHMENTS:
+            break
+    return out
+
+
+async def _image_part(att) -> dict:
+    """
+    Build an OpenAI multimodal image_url part from a discord.Attachment.
+
+    Small images are inlined as base64 data URLs (self-contained — the LLM
+    host need not reach Discord's CDN, which is often blocked on CN LANs).
+    Oversized images fall back to the plain URL.
+    """
+    try:
+        if att.size and att.size <= IMAGE_INLINE_MAX_BYTES:
+            data = await att.read()
+            if data and len(data) <= IMAGE_INLINE_MAX_BYTES:
+                b64 = base64.b64encode(data).decode("ascii")
+                ctype = att.content_type or "image/png"
+                return {"type": "image_url",
+                        "image_url": {"url": f"data:{ctype};base64,{b64}"}}
+    except Exception as exc:
+        logger.warning("Inline image failed (%s): %s — using URL", att.filename, exc)
+    return {"type": "image_url", "image_url": {"url": att.url}}
+
+
+def build_user_content(display_name: str, user_text: str, images: list,
+                       vision: bool, lang: str = "zh"):
+    """
+    Assemble the user message content for the LLM.
+
+    images interpretation depends on vision:
+      vision=True  → images = prepared multimodal parts (from _image_part);
+                     result is the OpenAI list [text, image_url...].
+      vision=False → images = raw attachments; result is plain text plus a
+                     note, so a text-only model knows the images exist but
+                     are invisible — and must not hallucinate their content.
+      no images    → plain "{name}: {text}" string (as before).
+    """
+    label = f"{display_name}: {user_text or '...'}"
+    if not images:
+        return label
+    if vision:
+        text_part = {"type": "text",
+                     "text": f"{display_name}: {user_text or ('（有人发了图片）' if lang == 'zh' else '(someone sent an image)')}"}
+        return [text_part, *images]
+    # Vision-less: describe the images in text, forbid making things up.
+    n = len(images)
+    if lang == "zh":
+        note = (f"（注：{display_name} 发来 {n} 张图片，但你没有视觉模块、看不到图内容，"
+                f"绝不许编造图里有什么；需要时让对方自己描述，或按看不到图自然接话。）")
+    else:
+        note = (f"(Note: {display_name} sent {n} image(s), but you have no vision module "
+                f"and cannot see them. NEVER invent their content — ask the sender to "
+                f"describe them, or reply naturally as someone who can't see the picture.)")
+    return f"{label}\n{note}"
 
 
 class VrSuiteBot(discord.Client):
@@ -360,12 +428,21 @@ class VrSuiteBot(discord.Client):
 
             system_prompt = build_system_prompt(character, lang, extra_notes=extra)
 
+            # ── Vision routing: only girls whose host model has vision
+            #    actually receive the image pixels; others get a text note.
+            vision = VISION_CAPABILITY.get(character, False)
+            image_ats = collect_images(message)
+            image_input = (
+                [await _image_part(a) for a in image_ats]
+                if (image_ats and vision) else image_ats
+            )
+            user_content = build_user_content(
+                message.author.display_name, user_text, image_input, vision, lang
+            )
+
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(self._history_as_messages(channel_id, message.author.display_name))
-            messages.append({
-                "role": "user",
-                "content": f"{message.author.display_name}: {user_text or '...'}",
-            })
+            messages.append({"role": "user", "content": user_content})
 
             llm_resp = await generate_reply(messages)
             if llm_resp is None:

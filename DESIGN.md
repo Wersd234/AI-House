@@ -237,3 +237,33 @@ Bot 后台常驻一个异步定时任务（每 **10~15 秒**轮询一次本地�
 - [ ] 定义 `/whoishome` 指令的 Embed 渲染模板
 - [ ] 填充第 7 章全部占位参数
 - [ ] 补充交接班公告的触发条件与限频策略
+
+---
+
+## 附录B：角色卡提到的 function 全清单（QQ 原版 → 本项目落点）
+
+两张 QQ 群友卡共提到 **14 个 function**。移植时逐一处理如下：
+
+| # | QQ 卡 function | 用途 | 本项目状态 | 说明 |
+|---|---|---|---|---|
+| 1 | `send_message`（传数组分条） | 一次回多条消息 | ✅ 已替代 | 引擎 `_split_bubbles` 按标点自动切气泡，角色无需调工具 |
+| 2 | `get_message_images`（看图） | 识别图片内容 | ✅ 已实现（本次） | **能力分叉**：QWEN 有视觉 → 图片转 base64 多模态 `image_url` 喂模型；**DEEPSEEK 无视觉模块** → 图片转文字提示 `[图片×N，看不见内容]`，人设禁止编造图内容。开关 `VISION_QWEN` / `VISION_DEEPSEEK` |
+| 3 | `memory_append` | 主动记长期记忆 | ✅ 已替代 | 自动长期记忆：每 10 个用户回合摘要 → `data/memory.json` → 注入 system prompt，无需角色手动操作 |
+| 4 | `memory_query` | 主动回忆 | ✅ 已替代 | 同上，记忆自动注入，无需查询 |
+| 5 | `memory_remove` | 删过时记忆 | 🟡 部分 | 摘要合并时自动淘汰旧信息；暂无手动删除接口 |
+| 6 | `replyToMessageId` | 选择性引用回复 | ❌ 未实现 | 目前直接发送（webhook 发言无法 Discord reply，需转 thread 才可挂引用）；列入第二档 |
+| 7 | `send_poke`（拍一拍） | 轻互动 | ❌ 未实现 | Discord 无拍一拍；语义最近似 = 给消息加反应表情 👋，列入第三档 |
+| 8 | `web_search` | 查资料 | ❌ 未实现 | 可从 Amadeus 的 Tavily 搜索模块移植（`PTV_*` key 曾预留），列入第二档 |
+| 9 | `web_fetch` | 点开搜索结果正文 | ❌ 未实现 | 依附 #8 一起移植 |
+| 10 | `list_stickers` | 查看表情包库 | ❌ 未实现 | 表情包体系五件套整体未接（Discord 自定义 emoji/贴纸可平替），列入第三档 |
+| 11 | `get_sticker_image` | 查看某表情内容 | ❌ 未实现 | 同上 |
+| 12 | `sticker_note` | 给表情记笔记 | ❌ 未实现 | 同上 |
+| 13 | `send_sticker` | 发送表情 | ❌ 未实现 | 同上 |
+| 14 | `collect_sticker`（偷图收藏） | 收藏别人表情 | ❌ 未实现 | 同上 |
+
+本项目自有的、QQ 卡没有的 function（角色无感知、引擎代劳）：
+
+- **视觉路由**（本次新增）：`collect_images` / `_image_part` / `build_user_content`——按 `VISION_CAPABILITY` 决定像素直喂还是文字提示
+- **emotion 输出**：两张卡末尾的 JSON `{"emotion","reply"}` 块（QQ 卡无，本项目 webhook 表情字段需要）
+- 交接班公告、Presence 自写、长期记忆摘要——全部由引擎在角色外悄悄完成，两张卡中**已不再引用任何工具名**，避免模型幻觉调用不存在的 function
+

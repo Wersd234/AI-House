@@ -300,6 +300,48 @@ class ModelFieldTest(unittest.TestCase):
         self.assertEqual(captured.get("model"), "default")
 
 
+class VisionRoutingTest(unittest.TestCase):
+    """视觉能力路由：有图时 qwen 收多模态、deepseek 收文字提示。"""
+
+    def test_vision_capability_defaults(self):
+        import config
+        self.assertTrue(config.VISION_CAPABILITY["QWEN"])
+        self.assertFalse(config.VISION_CAPABILITY["DEEPSEEK"])
+
+    def test_no_images_plain_text(self):
+        from main import build_user_content
+        c = build_user_content("小明", "你好", [], True)
+        self.assertEqual(c, "小明: 你好")
+
+    def test_vision_on_returns_multimodal(self):
+        from main import build_user_content
+        parts = [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAA"}}]
+        c = build_user_content("小明", "看图", parts, True)
+        self.assertIsInstance(c, list)
+        self.assertEqual(c[0]["type"], "text")
+        self.assertEqual(c[1]["type"], "image_url")
+
+    def test_vision_off_note_forbids_hallucination(self):
+        from main import build_user_content
+
+        class FakeAtt:
+            pass
+
+        c = build_user_content("小明", "", [FakeAtt(), FakeAtt()], False, "zh")
+        self.assertIsInstance(c, str)
+        self.assertIn("2 张图片", c)
+        self.assertIn("绝不许编造", c)
+        c_en = build_user_content("Bob", "look", [FakeAtt()], False, "en")
+        self.assertIn("NEVER invent", c_en)
+
+    def test_cards_mention_vision(self):
+        from config import SYSTEM_PROMPTS
+        self.assertIn("视觉模块", SYSTEM_PROMPTS["DEEPSEEK"]["zh"])
+        self.assertIn("视觉模块", SYSTEM_PROMPTS["QWEN"]["zh"])
+        self.assertIn("vision", SYSTEM_PROMPTS["DEEPSEEK"]["en"])
+        self.assertIn("vision", SYSTEM_PROMPTS["QWEN"]["en"])
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

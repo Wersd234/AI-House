@@ -55,6 +55,9 @@ services:
       # ── Long-term memory ────────────────────────────────────
       MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
       MEMORY_EVERY_N_MESSAGES: ${MEMORY_EVERY_N_MESSAGES:-10}
+      VISION_QWEN: ${VISION_QWEN:-true}
+      VISION_DEEPSEEK: ${VISION_DEEPSEEK:-false}
+      MAX_IMAGE_ATTACHMENTS: ${MAX_IMAGE_ATTACHMENTS:-2}
 
     # Persist runtime state (state.json / webhooks.json / settings).
     volumes:
