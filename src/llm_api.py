@@ -22,6 +22,7 @@ from config import (
     PRESENCE_MAX_TOKENS, PRESENCE_SAMPLING,
     SYSTEM_PROMPTS,
 )
+from sniffer import get_sniffed_model
 
 # Single shared client — httpx connection pooling is handled internally.
 # Model name is intentionally NOT hard-coded; the caller may override
@@ -125,13 +126,19 @@ async def _chat_once(
     Single-turn call to the LLM.
 
     model : str | None
-        Optional explicit model id. If None, the field is omitted and
-        the backend uses whatever is loaded — this is the key detail
-        that lets a single bot serve whichever model is awake.
+        Which model field to send. Resolution order:
+        explicit arg → the ID discovered by the sniffer → "default".
+        (The openai SDK *requires* the field; Ollama validates it too.
+        We never hard-code a persona model — the sniffer reports
+        whatever the host actually loaded, keeping "no user switching"
+        and single-room VRAM semantics intact.)
     """
-    kwargs = dict(messages=messages, max_tokens=max_tokens, **sampling)
-    if model:
-        kwargs["model"] = model
+    kwargs = dict(
+        messages=messages,
+        max_tokens=max_tokens,
+        model=model or get_sniffed_model() or "default",
+        **sampling,
+    )
     if extra:
         kwargs["extra_body"] = extra
 

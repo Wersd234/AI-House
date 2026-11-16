@@ -211,6 +211,74 @@ class WebhookModuleTest(unittest.TestCase):
         self.assertIsNone(asyncio.run(webhook._fetch_avatar_bytes("")))
 
 
+class ModelFieldTest(unittest.TestCase):
+    """openai SDK 强制要求 model 字段：由嗅探器发现并回填。"""
+
+    def test_sniffer_caches_model_id(self):
+        from unittest import mock
+        import sniffer
+
+        class FakeResp:
+            status_code = 200
+            def json(self):
+                return {"data": [{"id": "qwen-fake-7b"}]}
+
+        old = sniffer.get_sniffed_model()
+        try:
+            with mock.patch.object(sniffer.httpx, "get", lambda *a, **k: FakeResp()):
+                ch = sniffer.sniff_character()
+            self.assertEqual(ch, "QWEN")
+            self.assertEqual(sniffer.get_sniffed_model(), "qwen-fake-7b")
+        finally:
+            sniffer.set_sniffed_model(old)
+
+    def test_chat_once_always_sends_model(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest import mock
+        import llm_api
+        import sniffer
+
+        captured = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+            msg = SimpleNamespace(content="ok")
+            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+
+        sniffer.set_sniffed_model("qwen-fake-7b")
+        try:
+            with mock.patch.object(
+                llm_api._llm_client.chat.completions, "create", fake_create
+            ):
+                out = asyncio.run(
+                    llm_api._chat_once([{"role": "user", "content": "x"}], 10, {"temperature": 0.5})
+                )
+        finally:
+            sniffer.set_sniffed_model(None)
+        self.assertEqual(out, "ok")
+        self.assertEqual(captured.get("model"), "qwen-fake-7b")
+
+    def test_chat_once_falls_back_to_default(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest import mock
+        import llm_api
+        import sniffer
+
+        captured = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+            msg = SimpleNamespace(content="ok")
+            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
+
+        sniffer.set_sniffed_model(None)
+        with mock.patch.object(llm_api._llm_client.chat.completions, "create", fake_create):
+            asyncio.run(llm_api._chat_once([{"role": "user", "content": "x"}], 10, {"temperature": 0.5}))
+        self.assertEqual(captured.get("model"), "default")
+
+
 class EnvFallbackTest(unittest.TestCase):
     """config._env: empty string (Portainer ${VAR:-}) falls back to default."""
 

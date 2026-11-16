@@ -84,6 +84,14 @@ class VrSuiteBot(discord.Client):
         logger.info("Command tree synced.")
 
     async def on_ready(self):
+        # Prime the sniffer once so the model ID is known before the
+        # first LLM presence/chat call (SDK requires the model field).
+        try:
+            sniffed = sniff_character()
+            update_character(sniffed)
+        except Exception as exc:
+            logger.warning("Startup sniff failed: %s", exc)
+
         char = get_character()
         logger.info(
             "✅ VRS '%s' Online | 当前当值: %s",

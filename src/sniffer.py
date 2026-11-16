@@ -66,18 +66,38 @@ def _detect_model_id() -> Optional[str]:
     return None
 
 
+# ── Discovered model ID cache ──────────────────────────────────────
+# The openai SDK *requires* a model field (Ollama validates it too),
+# but we never hard-code one — the sniffer discovers whatever the host
+# actually loaded and every chat/presence/memory call uses that.
+_last_model_id: Optional[str] = None
+
+
+def get_sniffed_model() -> Optional[str]:
+    """The model ID discovered by the last successful probe (or None)."""
+    return _last_model_id
+
+
+def set_sniffed_model(model_id: Optional[str]) -> None:
+    global _last_model_id
+    _last_model_id = model_id
+
+
 def sniff_character() -> str:
     """
     Probe the endpoint and return the active character key:
     'QWEN', 'DEEPSEEK', or 'ALL_SLEEP'.
 
-    This is the single source of truth for "who is awake".
+    This is the single source of truth for "who is awake". A successful
+    probe also caches the model ID (see get_sniffed_model).
     """
     model_id = _detect_model_id()
     if not model_id:
+        set_sniffed_model(None)
         logger.info("Model sniffer: endpoint unreachable → ALL_SLEEP")
         return "ALL_SLEEP"
 
+    set_sniffed_model(model_id)
     lowered = model_id.lower()
     for keyword, character in CHARACTER_KEYWORDS:
         if keyword in lowered:
