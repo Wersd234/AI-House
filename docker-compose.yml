@@ -76,14 +76,14 @@ services:
 networks:
   # 固定子网：避免宿主机 default-address-pools 耗尽时报
   # "all predefined address pools have been fully subnetted"。
-  # 若与现有网络冲突（docker network ls 查看），改第三个八位组即可，
-  # 如 172.29.0.0/24、172.30.0.0/24…（避开局域网 192.168.0.x）
+  # 已核对宿主机现有网络：172.17-18/20-23/26-31 均被占用，172.24 空闲。
+  # 若以后冲突，改第三个八位组（如 172.25），避开局域网 192.168.0.x
   vrsuite_net:
     name: vrsuite_net
     ipam:
       config:
-        - subnet: 172.28.0.0/24
-          gateway: 172.28.0.1
+        - subnet: 172.24.0.0/24
+          gateway: 172.24.0.1
 
 volumes:
   vrsuite_data:
