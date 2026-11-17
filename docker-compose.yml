@@ -59,6 +59,19 @@ services:
       # ── Long-term memory ────────────────────────────────────
       MEMORY_ENABLED: ${MEMORY_ENABLED:-true}
       MEMORY_EVERY_N_MESSAGES: ${MEMORY_EVERY_N_MESSAGES:-10}
+
+      # ── 思维链防溢出（DeepSeek 思考系模型，见 config.py）────
+      # 思考模型输出预算 = 基础值 × 倍率，封顶 CEILING
+      THINKING_TOKEN_MULTIPLIER: ${THINKING_TOKEN_MULTIPLIER:-4}
+      THINKING_TOKEN_CEILING: ${THINKING_TOKEN_CEILING:-8192}
+      # 判定"会思考"的 model id 关键词（逗号分隔，如 deepseek,qwen3）
+      THINKING_MODEL_KEYWORDS: ${THINKING_MODEL_KEYWORDS:-deepseek}
+      # true = 请求级关闭思考（llama.cpp/vLLM 支持的模板生效）
+      DISABLE_THINKING: ${DISABLE_THINKING:-false}
+      # 基础输出预算（思考模型会按上面倍率自动加宽）
+      MAX_REPLY_TOKENS: ${MAX_REPLY_TOKENS:-1024}
+      MAX_MEMORY_TOKENS: ${MAX_MEMORY_TOKENS:-512}
+
       VISION_QWEN: ${VISION_QWEN:-true}
       VISION_DEEPSEEK: ${VISION_DEEPSEEK:-false}
       MAX_IMAGE_ATTACHMENTS: ${MAX_IMAGE_ATTACHMENTS:-2}

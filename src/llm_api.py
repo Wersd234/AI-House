@@ -20,6 +20,8 @@ from config import (
     CHAT_SAMPLING, CHAT_SAMPLING_EXTRA, MEMORY_SAMPLING,
     MAX_REPLY_TOKENS, MAX_MEMORY_TOKENS,
     PRESENCE_MAX_TOKENS, PRESENCE_SAMPLING,
+    THINKING_TOKEN_MULTIPLIER, THINKING_TOKEN_CEILING,
+    THINKING_MODEL_KEYWORDS, DISABLE_THINKING,
     SYSTEM_PROMPTS,
 )
 from sniffer import get_sniffed_model
@@ -56,6 +58,71 @@ def _extract_json(text: str) -> dict | None:
 
 
 # ═══════════════════════════════════════════════════════════════════
+# Thinking-Model Handling (思维链防溢出)
+# ═══════════════════════════════════════════════════════════════════
+
+def _resolve_model(model: str | None) -> str:
+    """Explicit arg → sniffer-discovered ID → "default" (SDK needs one)."""
+    return model or get_sniffed_model() or "default"
+
+
+def _is_thinking_model(model_id: str) -> bool:
+    """True if the model ID looks like a chain-of-thought emitter."""
+    lowered = (model_id or "").lower()
+    return any(k in lowered for k in THINKING_MODEL_KEYWORDS)
+
+
+def _thinking_budget(base: int, model_id: str) -> int:
+    """Output-token budget for the model being called.
+
+    max_tokens also caps the reasoning stream, so thinking models get
+    base × multiplier (capped by the ceiling). Non-thinking models keep
+    the base budget untouched.
+    """
+    if not _is_thinking_model(model_id):
+        return base
+    return max(base, min(int(base * THINKING_TOKEN_MULTIPLIER), THINKING_TOKEN_CEILING))
+
+
+# DeepSeek thinking models served *without* a reasoning parser (vLLM /
+# SGLang raw passthrough) leak the CoT straight into content using the
+# chat-template channel protocol:
+#
+#   <｜channel｜>thinking<｜message｜> …reasoning…
+#   <｜channel｜>final<｜message｜>    …the actual answer…
+#
+# (V3.1 uses channel names analysis/final — same shape; the pipe token
+# may render full-width ｜ or half-width | depending on the server.)
+#
+# Without the closing  final  channel the whole output is CoT and the
+# answer never started — that's the overflow case.
+_FINAL_CHANNEL_RE = re.compile(
+    r"<\|{1,2}\s*channel\s*\|{0,2}>\s*final\s*(?:<\|{1,2}\s*message\s*\|{1,2}>)?", re.I)
+_OPEN_CHANNEL_RE = re.compile(
+    r"<\|{1,2}\s*channel\s*\|{0,2}>\s*(?:thinking|analysis|thought)", re.I)
+
+
+def _split_channel_cot(text: str) -> tuple[str, bool]:
+    """
+    Split DeepSeek channel-format output into (answer, truncated).
+
+    Returns (answer_text, answered). ``answered`` is False when the
+    model was mid-thinking and got cut off before the final channel —
+    i.e. chain-of-thought overflowed the token budget.
+    """
+    # Normalise the full-width pipe glyph the template can emit.
+    text = text.replace("｜", "|")
+    m = list(_FINAL_CHANNEL_RE.finditer(text))
+    if m:
+        return text[m[-1].end():].strip(), True
+    # No final channel: either pure CoT with no answer, or a plain
+    # non-thinking reply that never used channels at all.
+    if _OPEN_CHANNEL_RE.search(text):
+        return "", False
+    return text.strip(), True
+
+
+# ═══════════════════════════════════════════════════════════════════
 # Reply Sanitising
 # ═══════════════════════════════════════════════════════════════════
 
@@ -64,8 +131,14 @@ _COT_PATTERNS = [
     (r"<\|assistant>thought.*?(?=\n\n|\Z)", "", re.DOTALL),
     (r"<\|user>thought.*?(?=\n\n|\Z)", "", re.DOTALL),
     (r"<thinking>.*?</thinking>", "", re.DOTALL),
+    (r"<think>.*?</think>", "", re.DOTALL),
     (r"<reasoning>.*?</reasoning>", "", re.DOTALL),
     (r"\[thinking\].*?\[/thinking\]", "", re.DOTALL),
+    # Truncated (overflow) outputs never close their opener: whatever
+    # follows a still-open think/reasoning tag IS the CoT, drop it.
+    (r"<thinking>.*", "", re.DOTALL),
+    (r"<think>.*", "", re.DOTALL),
+    (r"<reasoning>.*", "", re.DOTALL),
 ]
 
 
@@ -104,6 +177,7 @@ def clean_reply_text(text: str) -> str:
     if not text:
         return "……"
     cleaned = text
+    cleaned, _ = _split_channel_cot(cleaned)
     for pat, repl, *flags in _COT_PATTERNS:
         cleaned = re.sub(pat, repl, cleaned, flags=flags[0] if flags else 0)
     cleaned = cleaned.replace("</thinking>", "").replace("[think]", "")
@@ -124,7 +198,8 @@ async def _chat_once(
     model: str | None = None,
 ) -> str | None:
     """
-    Single-turn call to the LLM.
+    Single-turn call to the LLM. Returns the *answer* text (CoT already
+    split off), or None when no answer came back.
 
     model : str | None
         Which model field to send. Resolution order:
@@ -133,20 +208,95 @@ async def _chat_once(
         We never hard-code a persona model — the sniffer reports
         whatever the host actually loaded, keeping "no user switching"
         and single-room VRAM semantics intact.)
-    """
-    kwargs = dict(
-        messages=messages,
-        max_tokens=max_tokens,
-        model=model or get_sniffed_model() or "default",
-        **sampling,
-    )
-    if extra:
-        kwargs["extra_body"] = extra
 
-    response = await _llm_client.chat.completions.create(**kwargs)
-    if not getattr(response, "choices", None) or len(response.choices) == 0:
+    Chain-of-thought overflow handling:
+      - thinking models get a widened output budget (see _thinking_budget);
+      - if the model hits the cap mid-thinking (no answer started), we
+        retry ONCE at double the base budget, capped by the ceiling;
+      - a reasoning-parser backend that parks the whole CoT in
+        reasoning_content (content empty, finish=length) gets the same
+        retry plus a loud log pointing at the two knobs that fix it.
+    """
+    resolved = _resolve_model(model)
+
+    body_extra = dict(extra) if extra else {}
+    if DISABLE_THINKING:
+        # Request-level thinking toggle — honoured via chat_template_kwargs
+        # by vLLM/SGLang/LM Studio templates that expose the switch
+        # (DeepSeek V3.1/V3.2, Qwen3), and via the top-level "thinking"
+        # field by llama.cpp llama-server; ignored elsewhere.
+        ck = dict(body_extra.get("chat_template_kwargs") or {})
+        ck["thinking"] = False
+        body_extra["chat_template_kwargs"] = ck
+        body_extra["thinking"] = False
+    elif _is_thinking_model(resolved):
+        # llama.cpp llama-server parks the CoT in its own reasoning_content
+        # field with this knob, leaving content clean; other backends
+        # ignore the unknown field harmlessly.
+        body_extra["reasoning_split"] = True
+
+    base_budget = _thinking_budget(max_tokens, resolved)
+    doubled_budget = _thinking_budget(max_tokens * 2, resolved)
+    budgets = [base_budget] + ([doubled_budget] if doubled_budget > base_budget else [])
+
+    for i, budget in enumerate(budgets):
+        kwargs = dict(
+            messages=messages,
+            max_tokens=budget,
+            model=resolved,
+            **sampling,
+        )
+        if body_extra:
+            kwargs["extra_body"] = body_extra
+
+        response = await _llm_client.chat.completions.create(**kwargs)
+        if not getattr(response, "choices", None) or len(response.choices) == 0:
+            return None
+        choice = response.choices[0]
+        msg = choice.message
+        finish = getattr(choice, "finish_reason", None)
+        content = (msg.content or "").strip()
+        retrying = i + 1 < len(budgets)
+
+        if not content:
+            # Backend with a reasoning parser: the CoT lives in
+            # reasoning_content and ate the whole budget, so content
+            # came back empty.
+            reasoning = getattr(msg, "reasoning_content", None)
+            if reasoning and finish == "length":
+                logger.warning(
+                    "Chain-of-thought overflow: reasoning_content (%d chars) "
+                    "consumed the entire %d-token budget — raise "
+                    "THINKING_TOKEN_MULTIPLIER/CEILING or set DISABLE_THINKING=true",
+                    len(reasoning), budget,
+                )
+            if retrying:
+                logger.warning(
+                    "Empty answer at %d output tokens — retrying at %d",
+                    budget, budgets[i + 1],
+                )
+                continue
+            return None
+
+        answer, answered = _split_channel_cot(content)
+        if answered:
+            return answer or None
+
+        # Backend leaked raw channel CoT into content and the cut happened
+        # before the final channel — the answer simply never started.
+        if retrying:
+            logger.warning(
+                "Chain-of-thought overflow: hit the %d-token cap mid-thinking "
+                "(no answer started) — retrying at %d tokens",
+                budget, budgets[i + 1],
+            )
+            continue
+        logger.warning(
+            "Chain-of-thought overflow persists at %d tokens — dropping this "
+            "reply (raise THINKING_TOKEN_CEILING or set DISABLE_THINKING=true)",
+            budget,
+        )
         return None
-    return response.choices[0].message.content
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -320,6 +470,9 @@ async def summarize_memory(current_memory: str, history: list[dict], lang: str, 
             model,
         )
         if raw:
+            # _chat_once already split any channel-format CoT off; a plain
+            # non-channel leak still lands here verbatim, so keep the
+            # legacy <|channel>thought scrub as a belt-and-braces pass.
             raw = raw.strip()
             if "<|channel>thought" in raw:
                 cleaned = re.sub(r"<\|channel>thought.*?(?=\n\n|\Z)", "", raw, flags=re.DOTALL).strip()

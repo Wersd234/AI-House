@@ -145,8 +145,8 @@ LOADING_REPLY = _env(
 # Rolling per-channel transcript, kept in data/history.json (survives
 # restarts). Length-capped so prompts stay bounded.
 HISTORY_MAXLEN = int(_env("HISTORY_MAXLEN", "20"))
-MAX_REPLY_TOKENS = 1024
-MAX_MEMORY_TOKENS = 512
+MAX_REPLY_TOKENS = int(_env("MAX_REPLY_TOKENS", "1024"))
+MAX_MEMORY_TOKENS = int(_env("MAX_MEMORY_TOKENS", "512"))
 
 # ── Long-term Memory (长期记忆) ────────────────────────────────────
 # After every N user messages in a channel, the recent conversation is
@@ -204,6 +204,33 @@ MEMORY_SAMPLING = {
     "temperature": 0.3,
     "top_p": 0.9,
 }
+
+# ── Thinking-model guardrails (思维链防溢出) ───────────────────────
+# max_tokens counts chain-of-thought too: DeepSeek thinking models
+# (V3.1/V3.2-Thinking, R1 family) burn the ENTIRE output budget on
+# reasoning before any answer text appears, so budgets tuned for
+# instant-reply models die mid-CoT (finish_reason="length", no JSON).
+# Whenever the sniffed model ID matches a thinking keyword we widen
+# every output budget by the multiplier, capped by the ceiling so
+# prompt + CoT + answer still fit inside CTX_SIZE.
+THINKING_TOKEN_MULTIPLIER = float(_env("THINKING_TOKEN_MULTIPLIER", "4"))
+THINKING_TOKEN_CEILING = int(_env("THINKING_TOKEN_CEILING", "8192"))
+# Model-ID keywords that mean "this model emits chain-of-thought"
+# (comma-separated env; add e.g. "qwen3" when a thinking Qwen is loaded).
+THINKING_MODEL_KEYWORDS = tuple(
+    k.strip().lower()
+    for k in _env("THINKING_MODEL_KEYWORDS", "deepseek").split(",")
+    if k.strip()
+)
+# Send chat_template_kwargs {"thinking": false} + top-level
+# {"thinking": false} to toggle reasoning off at the request level.
+# Honoured by vLLM/SGLang/LM Studio when the model's chat template
+# exposes the switch (DeepSeek-V3.1/V3.2, Qwen3), and by llama.cpp
+# llama-server via the top-level field; ignored by templates that lack
+# it. Caveats: R1-Distill has no such switch (only the widened budget
+# helps there), and Ollama's think:false is a native-API knob this
+# flag does not map to.
+DISABLE_THINKING = _bool_env("DISABLE_THINKING", "false")
 
 # ── Name-call trigger (呼名必回) ───────────────────────────────────
 # Wall-clock timezone for everything the girls "know" (prompt time

@@ -12,6 +12,9 @@ venv/
 data/*.json
 data/*.tmp
 
+# ACL repair backups (Windows file-permission recovery, local only)
+acl-recovery/
+
 # Image / resource — avatars ship with the repo (delete lines if you
 # prefer hosting art outside git)
 # resource/*.png
